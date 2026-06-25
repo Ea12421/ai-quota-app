@@ -101,6 +101,7 @@ export function collect() {
     }
     let curModel = null;
     let prevTotal = null;
+    let prevTotalKey = null;
     let hadTok = false;
     for (const line of lines) {
       if (!line) continue;
@@ -115,23 +116,33 @@ export function collect() {
         continue;
       }
       if (o.type === "event_msg" && o.payload && o.payload.type === "token_count") {
-        if (o.payload.rate_limits && (!latestRL || o.timestamp > latestRL.ts)) {
-          latestRL = { ts: o.timestamp, rl: o.payload.rate_limits };
+        if (o.payload.rate_limits) {
+          const t = Date.parse(o.timestamp); // 用数值比时间,避免 ISO 字符串格式混用排错
+          if (!Number.isNaN(t) && (!latestRL || t > latestRL.t)) {
+            latestRL = { ts: o.timestamp, t, rl: o.payload.rate_limits };
+          }
         }
         const info = o.payload.info;
         if (!info || !info.total_token_usage) continue;
+        // 跳过与上一条完全相同的累计快照(日志会重复记同一快照),否则 last_token_usage 被重复累加(实测多算 ~27%)
+        const tt = info.total_token_usage;
+        const totalKey =
+          (tt.input_tokens || 0) + "|" + (tt.cached_input_tokens || 0) + "|" + (tt.output_tokens || 0) + "|" + (tt.total_tokens || 0);
+        if (totalKey === prevTotalKey) continue;
+        prevTotalKey = totalKey;
         let lu = info.last_token_usage;
         if (!lu) {
-          // 退化:当前累计 − 上一条累计(clamp ≥0)
+          // 退化:当前累计 − 上一条累计;累计回退(=窗口重置)则把当前累计当新周期首个增量,别 clamp 成 0
           const cur = info.total_token_usage;
-          if (prevTotal) {
+          const reset = prevTotal && (cur.total_tokens || 0) < (prevTotal.total_tokens || 0);
+          if (prevTotal && !reset) {
             lu = {
               input_tokens: Math.max(0, (cur.input_tokens || 0) - (prevTotal.input_tokens || 0)),
               cached_input_tokens: Math.max(0, (cur.cached_input_tokens || 0) - (prevTotal.cached_input_tokens || 0)),
               output_tokens: Math.max(0, (cur.output_tokens || 0) - (prevTotal.output_tokens || 0)),
             };
           } else {
-            lu = cur;
+            lu = cur; // 首条 或 重置后:当前累计即本轮增量
           }
         }
         prevTotal = info.total_token_usage;

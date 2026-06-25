@@ -43,6 +43,8 @@ function compute() {
   const pricing = {}; // model -> 单价表
   const agg = {}; // date -> model -> {tok, usd, tool, tokBreakdown, usdBreakdown}
   let minDay = null;
+  let maxDay = null;
+  const today = todayKeyUTC8(); // 未来日期/时钟偏移的记录夹到今天:避免生成几百万空天(OOM)且区间锚定错乱
 
   const zeroBreak = () => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
 
@@ -50,11 +52,13 @@ function compute() {
     Object.assign(pricing, r.pricing || {});
     for (const e of r.entries) {
       modelTool[e.model] = r.tool;
-      if (minDay === null || e.date < minDay) minDay = e.date;
-      (agg[e.date] || (agg[e.date] = {}));
+      const date = e.date > today ? today : e.date; // 夹未来日期到今天,不丢数据也不造未来天
+      if (minDay === null || date < minDay) minDay = date;
+      if (maxDay === null || date > maxDay) maxDay = date;
+      (agg[date] || (agg[date] = {}));
       const cur =
-        agg[e.date][e.model] ||
-        (agg[e.date][e.model] = { tok: 0, usd: 0, tool: r.tool, tokBreakdown: zeroBreak(), usdBreakdown: zeroBreak() });
+        agg[date][e.model] ||
+        (agg[date][e.model] = { tok: 0, usd: 0, tool: r.tool, tokBreakdown: zeroBreak(), usdBreakdown: zeroBreak() });
       cur.tok += e.tok;
       cur.usd += e.usd;
       for (const k of ["input", "output", "cacheWrite", "cacheRead"]) {
@@ -78,8 +82,8 @@ function compute() {
   // 连续补齐:最早有用量的天 → 今天(UTC+8),每天补齐所有模型键(零填),带 tool 标签
   const daily = [];
   if (minDay) {
-    const today = todayKeyUTC8();
-    const lastDay = minDay > today ? minDay : today;
+    // 数据日期已夹到今天,连续补齐到今天即可(maxDay ≤ today)
+    const lastDay = today;
     for (const date of eachDay(minDay, lastDay)) {
       const dayAgg = agg[date] || {};
       const byModel = {};
@@ -116,7 +120,8 @@ function compute() {
       generatedBy: "engine/usage-data.mjs",
       sources: results.map((r) => ({
         tool: r.tool,
-        source: r.source,
+        // 把家目录绝对路径替成 ~,别在公开响应里泄露用户名/本机路径
+        source: typeof r.source === "string" && process.env.HOME ? r.source.split(process.env.HOME).join("~") : r.source,
         models: r.models,
         unpriced: r.unpriced || [],
         ...(r.stats ? { stats: r.stats } : {}),
@@ -185,7 +190,14 @@ const MIME = {
   ".svg": "image/svg+xml",
 };
 function serveStatic(req, res) {
-  let pathname = decodeURIComponent(req.url.split("?")[0]);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(req.url.split("?")[0]); // 畸形 % 编码会抛 URIError → 400,别崩服务
+  } catch {
+    res.writeHead(400);
+    res.end("bad request");
+    return;
+  }
   if (pathname === "/") pathname = "/index.html";
   const safe = path.normalize(pathname).replace(/^(\.\.(\/|\\|$))+/, "");
   const filePath = path.join(WEB_DIR, safe);
@@ -221,14 +233,14 @@ function runServe(port) {
       res.writeHead(200, {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",
-        "access-control-allow-origin": "*",
       });
       res.end(JSON.stringify(cache));
       return;
     }
     serveStatic(req, res);
   });
-  server.listen(port, () => {
+  // 只绑回环地址:仅本机可访问,局域网其它设备读不到你的用量/限额
+  server.listen(port, "127.0.0.1", () => {
     console.log(`用量看板已启动:http://localhost:${port}`);
     console.log(`API:http://localhost:${port}/api/usage.json  ·  每 60s 自动重算`);
     const lim = Object.entries(cache.limits || {}).map(([t, v]) => t + ":" + (v ? "已接入" : "未接入")).join(" ");

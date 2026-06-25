@@ -68,6 +68,23 @@
 - 建议流程:`git init`(若还没)→ 补 README → `gh repo create`(可先 `--private`)→ push。**用户共识:等菜单栏打包做完再一次性推**,别推半成品。
 - 用户机器上 `codex-auto-review`(Codex 的 GitHub PR 自动审查)已接通 → 上 GitHub 后开 PR 会被 Codex 自动 review。
 
+### 🔍 Codex review(2026-06-25 跑了两轮,已筛+已修+已验证)
+**⚠️ 第二轮抓到一个真 HIGH(此前自验也漏的):** Codex 日志里**同一累计快照会重复记**,旧实现对每条 `last_token_usage` 都累加 → **多算 ~27%**(698 个重复事件 / 48 文件)。已在 `codex.mjs` 加"跳过与上一条完全相同的累计快照"。**修复后 Codex 真值 = 110.85M(此前误报 ~150M)。**
+> 另外第二轮还发现:我第一轮的"未来日期"修法(`max(today,maxDay)`)引入了两个回归(区间锚定到未来 + 远期时间戳生成几百万空天 OOM)→ 已改成**把未来日期夹到今天**;以及一个 NUL 字节(脱敏那行写进了 `\0`,git 当二进制)→ 已修。
+
+**✅ 已修(两轮,已验证):**
+- `usage-data.mjs` 服务:`listen` 绑了所有网卡 + `CORS:*` + `_meta` 含绝对路径 → 局域网可读用量。改 `127.0.0.1` + 去 CORS* + 删响应里的绝对路径。
+- `usage-data.mjs:~188` `serveStatic` 的 `decodeURIComponent` 遇畸形 `%` 抛 URIError 崩服务 → try/catch 返回 400。
+- `codex.mjs` 累计重置 fallback:`Math.max(0, cur-prev)` 在 100→5 时丢掉重置后增量 → 检测回退则把 cur 当新增量(注:仅 `last_token_usage` 缺失时才走这分支,实际罕见)。
+- `codex.mjs` rate_limits 取最新:用了**字符串**比较 ISO 时间 → 改 `Date.parse` 数值比较。
+- `usage-data.mjs:82` `lastDay` 只到今天 → 未来日期/时钟偏移的记录被丢 → `lastDay = max(today, maxDay)`。
+- `web/index.html` 60s 刷新只更 data/days,没重建 MODELS/toolOf → 新模型不显示;且空 period 切折线 `pts[0]` 崩 → 重建模型(保留 st.on)+ n===0 兜底。
+
+**打包 UI 时顺手(LOW 硬化):** 模型名走 `textContent` 防 XSS(模型名是厂商受控,实际风险低);数字格式 NaN/Infinity 兜底;端口范围校验 + EADDRINUSE 处理;claude.mjs 的 cache_creation 空对象回退、dedup 顺序、负数校验。
+
+**不收:** codex 说 opus 价应是 $15/$75 —— 那是旧 Claude 3 Opus 价;本项目 SPEC 口径明确 opus-4.x = 5/25,**不改**。
+**判断题(留用户定):** codex 报"读整行 JSON 让 message.content 进内存"为 HIGH 隐私违约 —— 本地工具,content 从不被访问/记录/传出,仅 `JSON.parse` 时短暂在内存随即 GC,**实际不构成泄露**;要字节级严格可改正则只抠 usage 字段,但对本地工具属过度工程。
+
 ### 可选(非必须)
 - 按项目 `cwd` 归因视图(两源日志都有 cwd)
 - ClaudeMeter 令牌过期需重新导入(用户已知)
