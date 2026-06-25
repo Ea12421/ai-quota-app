@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用量看板</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+<style>
+  html,body{margin:0}
+  @keyframes ucbLive{0%,100%{opacity:1}50%{opacity:.35}}
+  .ucb-menu-item:hover{background:rgba(30,28,24,.06)!important;}
+</style>
+</head>
+<body>
+
+<div style="min-height:100vh; box-sizing:border-box; background:radial-gradient(900px 480px at 84% -14%, rgba(217,119,87,.07), transparent 58%), #EBE9E4; color:#1E1C18; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; -webkit-font-smoothing:antialiased; line-height:1.45; padding:30px 18px 64px; display:flex; flex-direction:column; align-items:center; gap:18px;">
+
+  <!-- ===== 菜单栏小窗 + 快捷弹窗 ===== -->
+  <div style="position:relative; width:100%; max-width:780px;">
+    <div id="mbPill" style="height:33px; border-radius:9px; background:rgba(255,255,255,.82); -webkit-backdrop-filter:blur(18px) saturate(1.3); backdrop-filter:blur(18px) saturate(1.3); border:1px solid rgba(30,28,24,.1); box-shadow:inset 0 1px 0 rgba(255,255,255,.8), 0 4px 14px -6px rgba(30,28,24,.22); display:flex; align-items:center; gap:12px; padding:0 13px; font-size:12.5px; color:#847F76; cursor:pointer; user-select:none;">
+      <span style="width:7px; height:7px; border-radius:50%; background:#D97757; box-shadow:0 0 7px rgba(217,119,87,.55); animation:ucbLive 2.4s ease-in-out infinite;"></span>
+      <span style="font-size:11px; color:#ABA59C; letter-spacing:.03em; margin-right:auto;">常驻菜单栏 · 点开 ↕</span>
+      <span style="opacity:.55; font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:11px; letter-spacing:.04em;">⌘ ⌥</span>
+      <span style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:12px;"><span style="color:#ABA59C;">5h</span> <span id="pill5h" style="color:#1E1C18;">—</span></span>
+      <span style="width:1px; height:13px; background:rgba(30,28,24,.13);"></span>
+      <span style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:12px;"><span style="color:#ABA59C;">7d</span> <span id="pill7d" style="color:#C2603E;">—</span></span>
+      <span id="mbCaret" style="color:#ABA59C; font-size:11px; margin-left:1px; transition:transform .18s;">⌄</span>
+    </div>
+
+    <!-- 快捷弹窗 -->
+    <div id="mbPop" style="position:absolute; top:calc(100% + 8px); right:0; width:288px; z-index:30; display:none; border-radius:13px; background:rgba(252,251,249,.92); -webkit-backdrop-filter:blur(40px) saturate(1.5); backdrop-filter:blur(40px) saturate(1.5); border:0.5px solid rgba(30,28,24,.13); box-shadow:inset 0 0.5px 0 rgba(255,255,255,.9), 0 18px 46px -10px rgba(30,28,24,.32), 0 3px 10px -4px rgba(30,28,24,.18); padding:7px; transform-origin:top right; color:#1E1C18;">
+
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 9px 11px;">
+        <span style="font-weight:600; font-size:13px; letter-spacing:.01em;">用量<span style="color:#C2603E;">看板</span></span>
+        <span id="updPop" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10.5px; color:#ABA59C;">更新 —</span>
+      </div>
+
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:0 9px 9px;">
+        <span style="font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">实时限额</span>
+        <span style="color:#CBC5BB; font-size:12px;">›</span>
+      </div>
+
+      <div style="padding:0 9px 12px;">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:7px;">
+          <span style="font-size:12.5px; color:#1E1C18;">5 小时窗口</span>
+          <span style="display:flex; align-items:baseline; gap:9px;"><span id="pop5hReset" style="font-size:11px; color:#ABA59C;">未接入</span><span id="pop5hPct" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-weight:600; font-size:12.5px; color:#1E1C18;">—</span></span>
+        </div>
+        <div style="height:5px; border-radius:4px; background:#ECEAE5; overflow:hidden;"><i id="pop5hBar" style="display:block; height:100%; width:0%; border-radius:4px; background:linear-gradient(90deg,#E08B6B,#D97757);"></i></div>
+      </div>
+      <div style="padding:0 9px 13px;">
+        <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:7px;">
+          <span style="font-size:12.5px; color:#1E1C18;">7 天额度</span>
+          <span style="display:flex; align-items:baseline; gap:9px;"><span id="pop7dReset" style="font-size:11px; color:#ABA59C;">未接入</span><span id="pop7dPct" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-weight:600; font-size:12.5px; color:#C2603E;">—</span></span>
+        </div>
+        <div style="height:5px; border-radius:4px; background:#ECEAE5; overflow:hidden;"><i id="pop7dBar" style="display:block; height:100%; width:0%; border-radius:4px; background:linear-gradient(90deg,#CA5C3E,#BE4A33);"></i></div>
+      </div>
+
+      <div style="height:0.5px; background:rgba(30,28,24,.09); margin:0 9px 11px;"></div>
+
+      <div style="padding:0 9px 8px;">
+        <div style="display:flex; align-items:flex-end; justify-content:space-between; margin-bottom:8px;">
+          <span style="font-size:11px; color:#ABA59C;">近 7 天用量</span>
+          <span id="miniTotal" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-weight:600; font-size:17px; letter-spacing:-.01em; color:#1E1C18;">0</span>
+        </div>
+        <svg id="miniSpark" viewBox="0 0 270 34" style="display:block; width:100%; height:auto; overflow:visible;"></svg>
+      </div>
+
+      <div style="height:0.5px; background:rgba(30,28,24,.09); margin:10px 9px;"></div>
+
+      <div id="mbOpen" class="ucb-menu-item" style="display:flex; align-items:center; gap:11px; padding:7px 9px; border-radius:7px; font-size:13px; color:#1E1C18; cursor:pointer;">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2" y="3" width="12" height="10" rx="2"></rect><line x1="2" y1="6" x2="14" y2="6"></line></svg>
+        <span style="flex:1;">打开完整窗口</span>
+        <span style="opacity:.4; font-size:12px;">⌘O</span>
+      </div>
+      <div class="ucb-menu-item" style="display:flex; align-items:center; gap:11px; padding:7px 9px; border-radius:7px; font-size:13px; color:#1E1C18; cursor:pointer;">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><line x1="3" y1="5.5" x2="13" y2="5.5"></line><line x1="3" y1="10.5" x2="13" y2="10.5"></line><circle cx="10" cy="5.5" r="1.9" fill="currentColor" stroke="none"></circle><circle cx="6" cy="10.5" r="1.9" fill="currentColor" stroke="none"></circle></svg>
+        <span style="flex:1;">偏好设置</span>
+        <span style="opacity:.4; font-size:12px;">⌘,</span>
+      </div>
+      <div style="height:0.5px; background:rgba(30,28,24,.09); margin:6px 9px;"></div>
+      <div class="ucb-menu-item" style="display:flex; align-items:center; gap:11px; padding:7px 9px; border-radius:7px; font-size:13px; color:#1E1C18; cursor:pointer;">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="8" y1="2.5" x2="8" y2="7.5"></line><path d="M4.8 4.6 A4.6 4.6 0 1 0 11.2 4.6"></path></svg>
+        <span style="flex:1;">退出</span>
+        <span style="opacity:.4; font-size:12px;">⌘Q</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 完整窗口 ===== -->
+  <div style="width:100%; max-width:780px; background:#FFFFFF; border:1px solid rgba(30,28,24,.1); border-radius:16px; overflow:hidden; box-shadow:0 26px 60px -22px rgba(30,28,24,.28), 0 5px 16px -8px rgba(30,28,24,.14);">
+
+    <div style="display:flex; align-items:center; gap:9px; padding:13px 16px; border-bottom:1px solid rgba(30,28,24,.08); background:#FBFAF8;">
+      <span style="display:flex; gap:8px;">
+        <i style="width:11px; height:11px; border-radius:50%; background:#E0655B;"></i>
+        <i style="width:11px; height:11px; border-radius:50%; background:#E0B24E;"></i>
+        <i style="width:11px; height:11px; border-radius:50%; background:#6FB55E;"></i>
+      </span>
+      <span style="font-weight:700; margin-left:7px; letter-spacing:.01em;">用量<span style="color:#C2603E;">看板</span></span>
+      <span id="updMain" style="margin-left:auto; font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:11px; color:#ABA59C;">更新于 — · 每 60s</span>
+    </div>
+
+    <div style="padding:20px 18px 22px;">
+
+      <!-- 工具分页(全部 / Claude Code / Codex …,由数据动态生成) -->
+      <div id="toolTabs" style="display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap;"></div>
+
+      <!-- HERO -->
+      <div style="position:relative; background:#FBFAF8; border:1px solid rgba(30,28,24,.09); border-radius:14px; padding:19px 22px; display:flex; align-items:center; justify-content:space-between; gap:18px; flex-wrap:wrap;">
+        <div>
+          <div id="heroLab" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#C2603E; margin-bottom:9px;">近 30 天 · 用量</div>
+          <div id="heroBig" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-weight:600; font-size:56px; line-height:.92; letter-spacing:-.025em; color:#1E1C18; font-feature-settings:'tnum' 1;">0</div>
+          <div id="heroSub" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:12px; color:#847F76; margin-top:11px; letter-spacing:.01em;"></div>
+          <div id="heroTrend" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:11.5px; color:#ABA59C; margin-top:10px; display:none; align-items:center; letter-spacing:.01em;"></div>
+          <div id="heroBreak" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:11.5px; margin-top:13px; display:flex; flex-wrap:wrap; gap:7px 9px; letter-spacing:.01em;"></div>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:flex-end; gap:9px;">
+          <div id="periods" style="display:flex; gap:3px; background:#ECEAE5; border:1px solid rgba(30,28,24,.06); border-radius:10px; padding:3px;">
+            <button data-p="today" data-coral="1" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 13px; cursor:pointer;">当天</button>
+            <button data-p="week" data-coral="1" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 13px; cursor:pointer;">近7天</button>
+            <button data-p="month" data-coral="1" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 13px; cursor:pointer;">近30天</button>
+            <button data-p="all" data-coral="1" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 13px; cursor:pointer;">全部</button>
+          </div>
+          <div id="metricSeg" style="display:flex; gap:3px; background:#ECEAE5; border:1px solid rgba(30,28,24,.06); border-radius:10px; padding:3px;">
+            <button data-m="tok" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 14px; cursor:pointer;">Token</button>
+            <button data-m="usd" data-coral="1" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 14px; cursor:pointer;">美元</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 实时限额 -->
+      <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
+        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">实时限额</span>
+        <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
+      </div>
+      <div id="limitsGrid" style="display:grid; grid-template-columns:1fr 1fr; gap:14px;"></div>
+
+      <!-- 每日用量 -->
+      <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
+        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">每日用量</span>
+        <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
+      </div>
+      <div style="background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:16px 16px 14px;">
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px;">
+          <div id="viewSeg" style="display:flex; gap:3px; background:#ECEAE5; border:1px solid rgba(30,28,24,.06); border-radius:9px; padding:3px;">
+            <button data-v="bar" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:6px; padding:6px 13px; cursor:pointer;">柱状</button>
+            <button data-v="line" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:6px; padding:6px 13px; cursor:pointer;">折线</button>
+          </div>
+          <span id="rangeLab" style="margin-left:auto; font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:11px; color:#ABA59C; letter-spacing:.02em;">近 30 天</span>
+        </div>
+        <div style="position:relative;">
+          <svg id="chart" viewBox="0 0 680 230" style="display:block; width:100%; height:auto; overflow:visible;"></svg>
+          <div id="tip" style="position:absolute; pointer-events:none; opacity:0; transform:translateX(-50%); background:#26241F; border:1px solid rgba(255,255,255,.1); border-radius:9px; padding:9px 11px; font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:11px; white-space:nowrap; box-shadow:0 14px 30px rgba(30,28,24,.35); transition:opacity .09s; z-index:5;"></div>
+        </div>
+        <div id="legend" style="display:flex; gap:8px; flex-wrap:wrap; margin-top:15px;"></div>
+      </div>
+
+      <!-- 单价 -->
+      <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
+        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">单价 · USD / 百万 token</span>
+        <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
+      </div>
+      <div id="pricing" style="background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:4px 2px; overflow-x:auto;"></div>
+
+      <!-- 口径说明 -->
+      <div id="notice" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10.5px; color:#ABA59C; margin-top:16px; text-align:center; letter-spacing:.01em;"></div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", async function(){
+  var R = document;
+  var MONO = "'JetBrains Mono',ui-monospace,Menlo,monospace";
+  var $ = function(id){ return R.querySelector('#'+id); };
+
+  // ---- 取真实数据 ----
+  var data;
+  try {
+    var resp = await fetch('/api/usage.json', { cache: 'no-store' });
+    if(!resp.ok) throw new Error('HTTP '+resp.status);
+    data = await resp.json();
+  } catch(e){
+    $("heroBig").textContent = "—";
+    $("heroSub").innerHTML = '<span style="color:#BE4A33">读取数据失败:'+ (e && e.message) +'。请用 <b>node engine/usage-data.mjs --serve</b> 启动后访问。</span>';
+    return;
+  }
+
+  // ---- 模型 → 颜色(设计配色 + 兜底)----
+  var PALETTE = {
+    "opus-4-8":   { color:"#D97757", top:"#E89571" },
+    "opus-4-7":   { color:"#D9A441", top:"#E8BC63" },
+    "sonnet-4-6": { color:"#7C8FA3", top:"#9AABBC" }
+  };
+  var FALLBACK = [
+    { color:"#A98AD1", top:"#C0A6E0" },
+    { color:"#6FA88C", top:"#8DBFA8" },
+    { color:"#C77DA0", top:"#D898B8" },
+    { color:"#C98A5E", top:"#DBA47C" }
+  ];
+  // 模型 → 工具(从 daily 的 tool 标签读)
+  var toolOf = {};
+  (data.daily || []).forEach(function(d){ for(var m in d.byModel){ toolOf[m] = d.byModel[m].tool; } });
+
+  var fbIdx = 0;
+  var MODELS = (data.models || []).map(function(id){
+    var p = PALETTE[id] || FALLBACK[(fbIdx++) % FALLBACK.length];
+    return { id:id, color:p.color, top:p.top, tool: toolOf[id] || "claude-code" };
+  });
+
+  // ---- 日序列:date → label "MM/DD";引擎已补齐连续天与各模型键 ----
+  var days = (data.daily || []).map(function(d){
+    return { label: d.date.slice(5).replace("-","/"), date: d.date, byModel: d.byModel || {} };
+  });
+
+  var ZB = { input:0, output:0, cacheWrite:0, cacheRead:0 };
+  function cell(d, mid){ var e = d.byModel[mid]; return e ? e : { tok:0, usd:0, tokBreakdown:ZB, usdBreakdown:ZB }; }
+
+  var st = { view:"bar", metric:"tok", period:"month", tool:"all", on:{} };
+  MODELS.forEach(function(m){ st.on[m.id]=true; });
+
+  // 当前工具筛选下可见的模型
+  function viz(){ return st.tool==="all" ? MODELS : MODELS.filter(function(m){ return m.tool===st.tool; }); }
+
+  function fmtUSD(v){ if(v>=1000) return "$"+(v/1000).toFixed(1)+"k"; return "$"+(v<10?v.toFixed(1):Math.round(v)); }
+  function fmtUSDbig(v){ return v.toLocaleString("en-US",{maximumFractionDigits:0}); }
+  function fmtTok(v){ if(v>=1e6) return (v/1e6).toFixed(1)+"M"; if(v>=1e3) return (v/1e3).toFixed(0)+"k"; return Math.round(v)+""; }
+  function val(d,mid){ var e=cell(d,mid); return st.metric==="usd"? e.usd : e.tok; }
+  function dayTotal(d){ var s=0; viz().forEach(function(m){ if(st.on[m.id]) s+=val(d,m.id); }); return s; }
+
+  function periodSlice(){
+    if(st.period==="today") return days.slice(-1);
+    if(st.period==="week") return days.slice(-7);
+    if(st.period==="month") return days.slice(-30);
+    return days.slice();
+  }
+  function periodWord(){return {today:"当天", week:"近 7 天", month:"近 30 天", all:"全部"}[st.period];}
+
+  function styleBtn(b, active){
+    var coral = b.getAttribute('data-coral')==='1';
+    b.style.transition='background .13s, color .13s, box-shadow .13s';
+    if(active){
+      if(coral){ b.style.background='linear-gradient(180deg,#E08B6B,#CF6A48)'; b.style.color='#FFFFFF'; b.style.fontWeight='600'; b.style.boxShadow='0 1px 2px rgba(170,75,40,.28), inset 0 1px 0 rgba(255,255,255,.35)'; }
+      else { b.style.background='#FFFFFF'; b.style.color='#1E1C18'; b.style.fontWeight='600'; b.style.boxShadow='0 1px 2px rgba(30,28,24,.14), inset 0 1px 0 rgba(255,255,255,.9)'; }
+    } else { b.style.background='transparent'; b.style.color='#847F76'; b.style.fontWeight='500'; b.style.boxShadow='none'; }
+  }
+  function setActive(container, btn){ Array.prototype.forEach.call(container.children, function(x){ styleBtn(x, x===btn); }); }
+
+  function renderHero(){
+    var slice=periodSlice(), tok=0, usd=0;
+    slice.forEach(function(d){ viz().forEach(function(m){ if(!st.on[m.id]) return; var e=cell(d,m.id); tok+=e.tok; usd+=e.usd; }); });
+    $("heroLab").textContent=periodWord()+" · 用量";
+    var big=$("heroBig"), sub=$("heroSub");
+    function suf(s){ return '<span style="font-size:.5em; color:#ABA59C; font-weight:500; margin-left:.1em; letter-spacing:0;">'+s+'</span>'; }
+    function pre(s){ return '<span style="font-size:.5em; color:#ABA59C; font-weight:500; margin-right:.04em; letter-spacing:0;">'+s+'</span>'; }
+    if(st.metric==="usd"){
+      big.style.color='#C2603E';
+      big.innerHTML=pre("$")+fmtUSDbig(usd);
+      sub.innerHTML="等价价值 · 按 API 单价折合(非账单)";
+    } else {
+      big.style.color='#1E1C18';
+      var s=fmtTok(tok), mm=s.match(/^([\d.,]+)(\D*)$/);
+      big.innerHTML= mm && mm[2] ? mm[1]+suf(mm[2]) : s;
+      sub.innerHTML="已用 Token · 折合 <b style=\"color:#C2603E; font-weight:600\">$"+fmtUSDbig(usd)+"</b>";
+    }
+    var tr=$("heroTrend");
+    if(slice.length>1){ var avg=(st.metric==="usd"?usd:tok)/slice.length;
+      tr.style.display="inline-flex";
+      tr.innerHTML='日均 <b style="color:#847F76; font-weight:600; margin-left:5px;">'+(st.metric==="usd"?fmtUSD(avg):fmtTok(avg))+'</b>';
+    } else { tr.style.display="none"; }
+  }
+
+  var svg=$("chart"), tip=$("tip");
+  var W=680,H=230, PL=44,PR=10,PT=12,PB=24, plotW=W-PL-PR, plotH=H-PT-PB;
+  function niceMax(v){ if(v<=0) return 1; var p=Math.pow(10,Math.floor(Math.log10(v))); var n=v/p; var step=n<=1?1:n<=2?2:n<=5?5:10; return step*p; }
+
+  function renderChart(){
+    var slice=periodSlice(), n=slice.length;
+    $("rangeLab").textContent=periodWord()+" · "+n+" 天";
+    var max=0; slice.forEach(function(d){ max=Math.max(max,dayTotal(d)); });
+    max=niceMax(max*1.08);
+    var x0=PL, y0=PT, yB=PT+plotH, bw=plotW/n, barW=Math.min(bw*0.6, 38), g='';
+    g+='<defs>';
+    viz().forEach(function(m){ g+='<linearGradient id="bg_'+m.id+'" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="'+m.top+'"/><stop offset="1" stop-color="'+m.color+'"/></linearGradient>'; });
+    g+='<linearGradient id="ag" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#D97757" stop-opacity=".26"/><stop offset="1" stop-color="#D97757" stop-opacity="0"/></linearGradient>';
+    g+='</defs>';
+    var lines=4;
+    for(var t=0;t<=lines;t++){
+      var gv=max*t/lines, gy=yB-(gv/max)*plotH;
+      g+='<line x1="'+x0+'" y1="'+gy.toFixed(1)+'" x2="'+(W-PR)+'" y2="'+gy.toFixed(1)+'" stroke="rgba(30,28,24,'+(t===0?'.16':'.06')+')" stroke-width="1"'+(t===0?'':' stroke-dasharray="2 4"')+'/>';
+      var glab=st.metric==="usd"?fmtUSD(gv):fmtTok(gv);
+      g+='<text x="'+(x0-8)+'" y="'+(gy+3.5).toFixed(1)+'" text-anchor="end" font-family="'+MONO+'" font-size="9.5" fill="#ABA59C">'+glab+'</text>';
+    }
+    if(st.view==="bar"){
+      slice.forEach(function(d,i){
+        var cx=x0+bw*i+bw/2, segs=[], total=0;
+        viz().forEach(function(m){ if(!st.on[m.id]) return; var v=val(d,m.id); if(v<=0) return; segs.push({c:m.id,v:v}); total+=v; });
+        if(total<=0) return;
+        var totalH=(total/max)*plotH, bx=(cx-barW/2), by=yB-totalH;
+        var r=Math.max(0, Math.min(3, barW/2, totalH/2)), cid="clip"+i;
+        g+='<clipPath id="'+cid+'"><rect x="'+bx.toFixed(1)+'" y="'+by.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+totalH.toFixed(1)+'" rx="'+r.toFixed(1)+'" ry="'+r.toFixed(1)+'"/></clipPath>';
+        g+='<g clip-path="url(#'+cid+')">';
+        var acc=0;
+        segs.forEach(function(s){ var h=(s.v/max)*plotH, yTop=yB-acc-h;
+          g+='<rect x="'+bx.toFixed(1)+'" y="'+yTop.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+(h+0.8).toFixed(1)+'" fill="url(#bg_'+s.c+')"/>'; acc+=h; });
+        g+='</g>';
+      });
+    } else {
+      var pts=slice.map(function(d,i){ return [x0+bw*i+bw/2, yB-(dayTotal(d)/max)*plotH]; });
+      if(pts.length===1){ pts=[[x0+plotW*0.5,pts[0][1]]]; }
+      var area='M'+pts[0][0].toFixed(1)+' '+yB+' '+pts.map(function(p){return 'L'+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' ')+' L'+pts[pts.length-1][0].toFixed(1)+' '+yB+' Z';
+      var line=pts.map(function(p,i){return (i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1);}).join(' ');
+      g+='<path d="'+area+'" fill="url(#ag)"/>';
+      g+='<path d="'+line+'" fill="none" stroke="#D97757" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>';
+      pts.forEach(function(p){ g+='<circle cx="'+p[0].toFixed(1)+'" cy="'+p[1].toFixed(1)+'" r="2.6" fill="#FFFFFF" stroke="#D97757" stroke-width="1.6"/>'; });
+    }
+    var idx=[]; if(n<=8){ for(var a=0;a<n;a++) idx.push(a); } else { idx=[0,Math.floor(n/4),Math.floor(n/2),Math.floor(3*n/4),n-1]; }
+    idx.forEach(function(i){ var cx=x0+bw*i+bw/2;
+      g+='<text x="'+cx.toFixed(1)+'" y="'+(yB+15)+'" text-anchor="middle" font-family="'+MONO+'" font-size="9.5" fill="#ABA59C">'+slice[i].label+'</text>'; });
+    slice.forEach(function(d,i){ var hx=x0+bw*i;
+      g+='<rect x="'+hx.toFixed(1)+'" y="'+y0+'" width="'+bw.toFixed(1)+'" height="'+plotH+'" fill="transparent" data-i="'+i+'"/>'; });
+    svg.innerHTML=g; svg._slice=slice; svg._bw=bw;
+  }
+
+  svg.addEventListener("mousemove",function(e){
+    var t=e.target; if(t.tagName!=="rect"||t.getAttribute("data-i")===null){ tip.style.opacity=0; return; }
+    Array.prototype.forEach.call(svg.querySelectorAll('rect[data-i]'), function(r){ r.style.fill='transparent'; });
+    t.style.fill='rgba(30,28,24,.05)';
+    var slice=svg._slice, bw=svg._bw, i=+t.getAttribute("data-i"), d=slice[i];
+    var rect=svg.getBoundingClientRect(), scale=rect.width/W, cx=(PL+bw*i+bw/2)*scale;
+    var rows='<div style="color:#FFFFFF; font-weight:600; margin-bottom:6px;">'+d.label+'</div>', tot=0;
+    viz().forEach(function(m){ if(!st.on[m.id]) return; var v=val(d,m.id); tot+=v;
+      rows+='<div style="display:flex; justify-content:space-between; gap:14px; color:#B8B2A8;"><span><i style="width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:7px; background:'+m.color+'"></i>'+m.id+'</span><span style="color:#F2EFEA">'+(st.metric==="usd"?fmtUSD(v):fmtTok(v))+'</span></div>'; });
+    rows+='<div style="margin-top:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,.14); color:#FFFFFF; display:flex; justify-content:space-between; gap:14px;"><span>合计</span><span>'+(st.metric==="usd"?fmtUSD(tot):fmtTok(tot))+'</span></div>';
+    // 浮到柱状图上方,不再压住柱子
+    tip.innerHTML=rows; tip.style.left=cx+"px"; tip.style.top="-12px"; tip.style.transform="translate(-50%,-100%)"; tip.style.opacity=1;
+  });
+  svg.addEventListener("mouseleave",function(){ tip.style.opacity=0;
+    Array.prototype.forEach.call(svg.querySelectorAll('rect[data-i]'), function(r){ r.style.fill='transparent'; });
+  });
+
+  function renderLegend(){
+    var L=$("legend"), slice=periodSlice(), tot={}, VM=viz();
+    VM.forEach(function(m){ tot[m.id]=0; slice.forEach(function(d){ tot[m.id]+=val(d,m.id); }); });
+    L.innerHTML="";
+    VM.forEach(function(m){
+      var off=!st.on[m.id];
+      var c=document.createElement("div");
+      c.style.cssText="display:flex; align-items:center; gap:8px; font-family:"+MONO+"; font-size:12px; background:#FFFFFF; border:1px solid rgba(30,28,24,.1); border-radius:999px; padding:5px 13px 5px 11px; cursor:pointer; user-select:none; transition:opacity .13s, color .13s; color:"+(off?"#ABA59C":"#1E1C18")+"; opacity:"+(off?".65":"1")+";";
+      c.innerHTML='<span style="width:11px; height:11px; border-radius:3px; background:'+(off?"#D8D3CB":m.color)+';"></span>'+m.id+' <span style="color:'+(off?"#C3BDB4":"#847F76")+'; font-size:11px;">'+(st.metric==="usd"?fmtUSD(tot[m.id]):fmtTok(tot[m.id]))+'</span>';
+      c.onclick=function(){ st.on[m.id]=!st.on[m.id]; renderChart(); renderLegend(); };
+      L.appendChild(c);
+    });
+  }
+
+  function renderMini(){
+    var last7=days.slice(-7);
+    var tot=0; last7.forEach(function(d){ MODELS.forEach(function(m){ tot+=cell(d,m.id).tok; }); });
+    $("miniTotal").textContent=fmtTok(tot);
+    var sums=last7.map(function(d){ var s=0; MODELS.forEach(function(m){ s+=cell(d,m.id).tok; }); return s; });
+    var mx=Math.max.apply(null,sums)*1.1||1, ms=$("miniSpark"), VW=270, VH=34, bw=VW/7, bwd=Math.min(bw*0.56,22), gg='';
+    sums.forEach(function(s,i){ var h=Math.max(2,(s/mx)*VH), cx=bw*i+bw/2;
+      gg+='<rect x="'+(cx-bwd/2).toFixed(1)+'" y="'+(VH-h).toFixed(1)+'" width="'+bwd.toFixed(1)+'" height="'+h.toFixed(1)+'" rx="2" fill="'+(i===6?"#D97757":"rgba(217,119,87,.38)")+'"/>'; });
+    ms.innerHTML=gg;
+  }
+
+  // 当前区间+工具下的 token/美元 四分类(输入/输出/写缓存/读缓存)
+  function renderBreak(){
+    var slice=periodSlice(), VM=viz(), b={input:0,output:0,cacheWrite:0,cacheRead:0};
+    slice.forEach(function(d){ VM.forEach(function(m){ if(!st.on[m.id]) return;
+      var src=(st.metric==="usd"? cell(d,m.id).usdBreakdown : cell(d,m.id).tokBreakdown)||ZB;
+      b.input+=src.input||0; b.output+=src.output||0; b.cacheWrite+=src.cacheWrite||0; b.cacheRead+=src.cacheRead||0;
+    }); });
+    var fmt = st.metric==="usd"? fmtUSD : fmtTok;
+    var items=[["输入",b.input],["输出",b.output],["写缓存",b.cacheWrite],["读缓存",b.cacheRead]];
+    $("heroBreak").innerHTML = items.map(function(it){
+      return '<span style="color:#ABA59C;">'+it[0]+' <b style="color:#847F76; font-weight:600;">'+fmt(it[1])+'</b></span>';
+    }).join('<span style="color:#CBC5BB; margin:0 1px;">·</span>');
+  }
+
+  // 单价表(USD / 百万 token),按当前工具筛选
+  function renderPricing(){
+    var P=data.pricing||{}, VM=viz(), grid="display:grid; grid-template-columns:1.7fr 1fr 1fr 1.5fr 1fr; gap:4px;";
+    var head='<div style="'+grid+' padding:8px 13px 7px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; color:#ABA59C; border-bottom:1px solid rgba(30,28,24,.07);">'
+      +'<span>模型</span><span style="text-align:right;">输入</span><span style="text-align:right;">输出</span><span style="text-align:right;">写缓存 1h/5m</span><span style="text-align:right;">读缓存</span></div>';
+    var body="";
+    VM.forEach(function(m){ var p=P[m.id]; if(!p) return;
+      var write = (p.cacheWrite1h==null) ? "—" : ("$"+p.cacheWrite1h+" / $"+p.cacheWrite5m);
+      body+='<div style="'+grid+' padding:9px 13px; font-family:'+MONO+'; font-size:12px; color:#847F76; border-bottom:1px solid rgba(30,28,24,.04);">'
+        +'<span style="color:#1E1C18;"><i style="width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:7px;vertical-align:middle;background:'+m.color+';"></i>'+m.id+(p.estimated?' <span style="color:#C2603E; font-size:9.5px;">估</span>':'')+'</span>'
+        +'<span style="text-align:right;">$'+p.input+'</span>'
+        +'<span style="text-align:right;">$'+p.output+'</span>'
+        +'<span style="text-align:right;">'+write+'</span>'
+        +'<span style="text-align:right;">$'+p.cacheRead+'</span></div>';
+    });
+    $("pricing").innerHTML = head + body;
+  }
+
+  // 工具分页:全部 / Claude Code / Codex / …
+  function toolLabel(t){ return {"all":"全部","claude-code":"Claude Code","codex":"Codex"}[t] || t; }
+  function renderToolTabs(){
+    var tabs=$("toolTabs"); tabs.innerHTML="";
+    ["all"].concat(data.tools||[]).forEach(function(t){
+      var active=st.tool===t, b=document.createElement("button");
+      b.textContent=toolLabel(t);
+      b.style.cssText="font:inherit; font-family:inherit; font-size:13px; padding:7px 15px; border-radius:9px; cursor:pointer; transition:all .13s; border:1px solid "+(active?"rgba(30,28,24,.16)":"rgba(30,28,24,.08)")+"; background:"+(active?"#FFFFFF":"transparent")+"; color:"+(active?"#1E1C18":"#847F76")+"; font-weight:"+(active?"600":"500")+"; box-shadow:"+(active?"0 1px 2px rgba(30,28,24,.1)":"none")+";";
+      b.onclick=function(){ st.tool=t; renderToolTabs(); renderAll(); };
+      tabs.appendChild(b);
+    });
+  }
+
+  function renderAll(){ renderHero(); renderBreak(); renderChart(); renderLegend(); renderPricing(); renderLimitCards(); }
+
+  $("viewSeg").addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b) return; st.view=b.getAttribute("data-v");
+    setActive(this,b); renderChart();
+  });
+  $("metricSeg").addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b) return; st.metric=b.getAttribute("data-m");
+    setActive(this,b); renderAll();
+  });
+  $("periods").addEventListener("click",function(e){
+    var b=e.target.closest("button"); if(!b) return; st.period=b.getAttribute("data-p");
+    setActive(this,b); renderAll();
+  });
+
+  var popOpen=false;
+  var pillIdle="rgba(255,255,255,.82)", pillIdleBorder="rgba(30,28,24,.1)", pillIdleShadow="inset 0 1px 0 rgba(255,255,255,.8), 0 4px 14px -6px rgba(30,28,24,.22)";
+  function setPop(o){ popOpen=o; var p=$("mbPop"), c=$("mbCaret"), pill=$("mbPill");
+    p.style.transition='opacity .16s, transform .16s';
+    if(o){ p.style.display='block'; requestAnimationFrame(function(){ p.style.opacity='1'; p.style.transform='translateY(0) scale(1)'; }); if(c) c.style.transform='rotate(180deg)';
+      if(pill){ pill.style.background='#FFFFFF'; pill.style.borderColor='rgba(30,28,24,.16)'; pill.style.boxShadow='inset 0 1px 0 rgba(255,255,255,.9), 0 6px 18px -8px rgba(30,28,24,.3)'; }
+    } else { p.style.opacity='0'; p.style.transform='translateY(-6px) scale(.98)'; if(c) c.style.transform='rotate(0deg)';
+      if(pill){ pill.style.background=pillIdle; pill.style.borderColor=pillIdleBorder; pill.style.boxShadow=pillIdleShadow; }
+      setTimeout(function(){ if(!popOpen) p.style.display='none'; },160); }
+  }
+  $("mbPill").addEventListener("click",function(){ setPop(!popOpen); });
+  var pop=$("mbPop"); if(pop) pop.addEventListener("click",function(e){ e.stopPropagation(); });
+  var ob=$("mbOpen"); if(ob) ob.addEventListener("click",function(){ setPop(false); });
+
+  // ---- 限额:每个工具一套(Codex 来自日志、Claude 来自 ClaudeMeter)----
+  function fmtRemain(iso){
+    if(!iso) return ""; var d=new Date(iso); if(isNaN(d)) return "";
+    var ms=d-new Date(); if(ms<=0) return "即将重置";
+    var h=ms/3600000;
+    if(h<24){ var hh=Math.floor(h), mm=Math.round((h-hh)*60); return "还剩 "+(hh>0?hh+"h ":"")+mm+"m 重置"; }
+    return "还剩 "+Math.round(h/24)+" 天 重置";
+  }
+  // 跨工具取最紧(百分比最高)的那条,给菜单栏小窗 + 弹窗用
+  function aggLimit(win){
+    var best=null, L=data.limits||{};
+    for(var t in L){ var x=L[t]&&L[t][win]; if(x&&x.pct!=null&&(best===null||x.pct>best.pct)) best={pct:x.pct,resetAt:x.resetAt}; }
+    return best;
+  }
+  function renderPillPop(){
+    var f=aggLimit("fiveHour"), s=aggLimit("sevenDay");
+    if(f){ $("pill5h").textContent=f.pct+"%"; $("pop5hPct").textContent=f.pct+"%"; $("pop5hReset").textContent=fmtRemain(f.resetAt)||"—"; $("pop5hBar").style.width=Math.min(100,f.pct)+"%"; $("pop5hBar").style.background="linear-gradient(90deg,#E08B6B,#D97757)"; }
+    else { $("pill5h").textContent="—"; $("pop5hPct").textContent="—"; $("pop5hReset").textContent="未接入"; $("pop5hBar").style.width="0%"; $("pop5hBar").style.background="#D8D3CB"; }
+    if(s){ $("pill7d").textContent=s.pct+"%"; $("pop7dPct").textContent=s.pct+"%"; $("pop7dReset").textContent=fmtRemain(s.resetAt)||"—"; $("pop7dBar").style.width=Math.min(100,s.pct)+"%"; $("pop7dBar").style.background="linear-gradient(90deg,#CA5C3E,#BE4A33)"; }
+    else { $("pill7d").textContent="—"; $("pop7dPct").textContent="—"; $("pop7dReset").textContent="未接入"; $("pop7dBar").style.width="0%"; $("pop7dBar").style.background="#D8D3CB"; }
+  }
+  function clockHM(iso){ if(!iso) return ""; var d=new Date(iso); if(isNaN(d)) return ""; return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
+  // 完整窗口的限额卡:跟着工具分页(全部 → 列出每个工具的 5h/7d)。pct 是「已用%」。
+  function limitCard(toolName, winLabel, entry, color, grad, asOf){
+    var has = entry && entry.pct!=null;
+    var pct = has? entry.pct+"%" : "—";
+    var snap = (has && asOf) ? ' · 截至 '+clockHM(asOf) : '';
+    var foot = has ? ((entry.resetAt? fmtRemain(entry.resetAt) : "已接入")+snap)
+                   : (toolName==="codex" ? "未接入" : "未接入 · 需装 ClaudeMeter");
+    var tag = (data.tools&&data.tools.length>1) ? '<span style="font-size:10px; color:#ABA59C; margin-left:6px;">'+toolLabel(toolName)+'</span>' : '';
+    return '<div style="background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:14px 16px;">'
+      +'<div style="display:flex; align-items:baseline; justify-content:space-between;"><span style="font-size:12.5px; color:#847F76;">'+winLabel+tag+'</span>'
+      +'<span style="font-family:'+MONO+'; font-weight:600; font-size:29px; line-height:1; color:'+(has?color:"#ABA59C")+';">'+pct+(has?'<span style="font-size:11px; font-weight:500; color:#ABA59C; margin-left:3px;">已用</span>':'')+'</span></div>'
+      +'<div style="height:8px; border-radius:6px; background:#ECEAE5; margin:12px 0 9px; overflow:hidden;"><i style="display:block; height:100%; width:'+(has?Math.min(100,entry.pct):0)+'%; border-radius:6px; background:'+(has?grad:"#D8D3CB")+';"></i></div>'
+      +'<div style="font-family:'+MONO+'; font-size:11.5px; color:#ABA59C;">'+foot+'</div></div>';
+  }
+  function renderLimitCards(){
+    var L=data.limits||{}, tools = st.tool==="all" ? (data.tools||[]) : [st.tool], html="";
+    tools.forEach(function(t){
+      var lim=L[t]||{};
+      html+=limitCard(t,"5 小时窗口", lim.fiveHour, "#D97757", "linear-gradient(90deg,#E08B6B,#D97757)", lim.asOf);
+      html+=limitCard(t,"7 天额度", lim.sevenDay, "#BE4A33", "linear-gradient(90deg,#CA5C3E,#BE4A33)", lim.asOf);
+    });
+    $("limitsGrid").innerHTML=html;
+  }
+
+  function applyUpdatedAt(iso){
+    var d=new Date(iso); var hhmm = isNaN(d) ? "—" : (('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2));
+    $("updMain").textContent="更新于 "+hhmm+" · 每 60s";
+    $("updPop").textContent="更新 "+hhmm;
+  }
+
+  // ---- 初始化 ----
+  setActive($("periods"), $("periods").querySelector('[data-p="month"]'));
+  setActive($("metricSeg"), $("metricSeg").querySelector('[data-m="tok"]'));
+  setActive($("viewSeg"), $("viewSeg").querySelector('[data-v="bar"]'));
+
+  renderPillPop();
+  applyUpdatedAt(data.updatedAt);
+  $("notice").textContent = data.notice || "";
+
+  renderToolTabs();
+  renderMini();
+  renderAll();
+
+  // ---- 每 60s 静默刷新数据(与引擎重算节奏一致)----
+  setInterval(async function(){
+    try{
+      var r = await fetch('/api/usage.json',{cache:'no-store'}); if(!r.ok) return;
+      var nd = await r.json();
+      data = nd;
+      days = (nd.daily||[]).map(function(d){ return { label:d.date.slice(5).replace("-","/"), date:d.date, byModel:d.byModel||{} }; });
+      renderPillPop(); applyUpdatedAt(nd.updatedAt); $("notice").textContent=nd.notice||"";
+      renderToolTabs(); renderMini(); renderAll();
+    }catch(e){}
+  }, 60000);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "usage-dashboard",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["engine/usage-data.mjs", "--serve", "7799"],
+      "port": 7799
+    }
+  ]
+}
