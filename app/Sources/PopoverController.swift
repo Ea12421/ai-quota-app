@@ -53,9 +53,10 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
         case "quit":
             NSApp.terminate(nil)
         case "resize":
-            // 宽度固定(内容 width:100% 自适配),只按内容真实高度调高
-            let h = numeric(body["h"]) ?? 380
-            popover.contentSize = NSSize(width: kPopoverWidth, height: max(120, h))
+            // 宽度固定(内容 width:100% 自适配),只按内容真实高度调高;防 NaN/Infinity/超大值
+            guard let h = numeric(body["h"]), h.isFinite else { break }
+            let maxH = (NSScreen.main?.visibleFrame.height ?? 1000) - 40
+            popover.contentSize = NSSize(width: kPopoverWidth, height: min(max(120, h), maxH))
         default:
             break
         }

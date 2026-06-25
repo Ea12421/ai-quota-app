@@ -20,7 +20,8 @@ cp "$DIR/Info.plist" "$APP/Contents/Info.plist"
 mkdir -p "$APP/Contents/Resources"
 cp "$DIR/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
-# 3) ad-hoc 签名(自用本机,无需 Apple 公证)
-codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+# 3) ad-hoc 签名(自用本机,无需 Apple 公证);SMAppService 要求已签名,失败就让构建报错
+codesign --force --sign - "$APP"
+codesign --verify --strict "$APP"
 
 echo "✅ 打包完成: $APP"

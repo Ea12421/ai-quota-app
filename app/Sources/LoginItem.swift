@@ -12,9 +12,13 @@ enum LoginItem {
     static func toggle() {
         guard #available(macOS 13.0, *) else { return }
         do {
-            if SMAppService.mainApp.status == .enabled {
+            switch SMAppService.mainApp.status {
+            case .enabled:
                 try SMAppService.mainApp.unregister()
-            } else {
+            case .requiresApproval:
+                // 被系统拦了:再点 register 也只会反复失败,直接引导用户去登录项设置里开
+                SMAppService.openSystemSettingsLoginItems()
+            default: // .notRegistered / .notFound
                 try SMAppService.mainApp.register()
             }
         } catch {

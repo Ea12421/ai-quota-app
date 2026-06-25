@@ -26,8 +26,13 @@ final class EngineProcess {
         guard let url = URL(string: "http://127.0.0.1:\(port)/api/usage.json") else { cb(false); return }
         var req = URLRequest(url: url)
         req.timeoutInterval = 1.5
-        URLSession.shared.dataTask(with: req) { _, resp, _ in
-            cb((resp as? HTTPURLResponse)?.statusCode == 200)
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            // 不只看 200:校验响应确实是我们自家引擎的契约(含 tools/updatedAt),
+            // 避免把占用 7799 的其他服务误认成自己的引擎而去复用/加载它的页面。
+            guard (resp as? HTTPURLResponse)?.statusCode == 200, let data = data,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  obj["tools"] is [Any], obj["updatedAt"] is String else { cb(false); return }
+            cb(true)
         }.resume()
     }
 
@@ -43,8 +48,10 @@ final class EngineProcess {
         p.currentDirectoryURL = root
         p.standardOutput = FileHandle.nullDevice
         p.standardError = FileHandle.nullDevice
-        do { try p.run(); process = p }
-        catch { NSLog("UsageBar: 引擎启动失败 \(error)") }
+        do {
+            try p.run()
+            DispatchQueue.main.async { self.process = p }  // process 只在主线程读写,避免与 stop() 竞态
+        } catch { NSLog("UsageBar: 引擎启动失败 \(error)") }
     }
 
     private func waitUntilUp(retries: Int, completion: @escaping (Bool) -> Void) {
