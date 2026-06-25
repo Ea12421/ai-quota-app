@@ -45,6 +45,7 @@ function compute() {
   let minDay = null;
   let maxDay = null;
   const today = todayKeyUTC8(); // 未来日期/时钟偏移的记录夹到今天:避免生成几百万空天(OOM)且区间锚定错乱
+  const floor = new Date(Date.parse(today + "T00:00:00Z") - 1100 * 86400000).toISOString().slice(0, 10); // 远古坏时间戳夹到 ~3 年前,同样防 OOM
 
   const zeroBreak = () => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
 
@@ -52,7 +53,7 @@ function compute() {
     Object.assign(pricing, r.pricing || {});
     for (const e of r.entries) {
       modelTool[e.model] = r.tool;
-      const date = e.date > today ? today : e.date; // 夹未来日期到今天,不丢数据也不造未来天
+      const date = e.date > today ? today : e.date < floor ? floor : e.date; // 夹到 [floor, today],防未来/远古坏时间戳生成海量空天(OOM)
       if (minDay === null || date < minDay) minDay = date;
       if (maxDay === null || date > maxDay) maxDay = date;
       (agg[date] || (agg[date] = {}));

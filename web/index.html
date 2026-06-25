@@ -206,12 +206,14 @@ document.addEventListener("DOMContentLoaded", async function(){
   // 模型 → 工具 + 配色,封成可重建函数:60s 刷新时新出现的模型也能进来,且保留已有显隐选择
   var toolOf = {};
   var MODELS = [];
-  function fbHash(id){ var h=0; for(var i=0;i<id.length;i++){ h=(h*31 + id.charCodeAt(i))>>>0; } return h % FALLBACK.length; }
   function rebuildModels(){
     toolOf = {};
     (data.daily || []).forEach(function(d){ for(var m in d.byModel){ toolOf[m] = d.byModel[m].tool; } });
+    // 兜底色:非设计配色的模型按 id 字母序分配【不同】的 FALLBACK 色 —— 确定性(不随 tok 排序漂移)且互不撞色
+    var fbMap = {}, fbIds = (data.models || []).filter(function(id){ return !PALETTE[id]; }).sort();
+    fbIds.forEach(function(id, i){ fbMap[id] = FALLBACK[i % FALLBACK.length]; });
     MODELS = (data.models || []).map(function(id){
-      var p = PALETTE[id] || FALLBACK[fbHash(id)]; // 兜底色按 id 确定性取,排序变化不会让已有模型变色
+      var p = PALETTE[id] || fbMap[id];
       return { id:id, color:p.color, top:p.top, tool: toolOf[id] || "claude-code" };
     });
     MODELS.forEach(function(m){ if(st.on[m.id]===undefined) st.on[m.id]=true; }); // 新模型默认显示,不动已有选择
