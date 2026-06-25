@@ -13,10 +13,12 @@ mkdir -p "$APP/Contents/MacOS"
 swiftc -O \
   -o "$APP/Contents/MacOS/$EXE_NAME" \
   "$DIR"/Sources/*.swift \
-  -framework AppKit -framework WebKit
+  -framework AppKit -framework WebKit -framework ServiceManagement
 
-# 2) Info.plist
+# 2) Info.plist + 图标
 cp "$DIR/Info.plist" "$APP/Contents/Info.plist"
+mkdir -p "$APP/Contents/Resources"
+cp "$DIR/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
 
 # 3) ad-hoc 签名(自用本机,无需 Apple 公证)
 codesign --force --sign - "$APP" >/dev/null 2>&1 || true

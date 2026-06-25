@@ -14,12 +14,32 @@ final class StatusPill {
             b.title = " 用量"
             b.target = self
             b.action = #selector(clicked)
+            b.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
     }
 
     @objc private func clicked() {
-        if let b = item.button { onClick(b) }
+        guard let b = item.button else { return }
+        if NSApp.currentEvent?.type == .rightMouseUp {
+            showMenu(from: b)
+        } else {
+            onClick(b)
+        }
     }
+
+    // 右键菜单:开机自启开关 + 退出
+    private func showMenu(from button: NSStatusBarButton) {
+        let menu = NSMenu()
+        let login = NSMenuItem(title: "开机自启", action: #selector(toggleLogin), keyEquivalent: "")
+        login.target = self
+        login.state = LoginItem.enabled ? .on : .off
+        menu.addItem(login)
+        menu.addItem(.separator())
+        menu.addItem(NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY + 4), in: button)
+    }
+
+    @objc private func toggleLogin() { LoginItem.toggle() }
 
     func update(with snap: PillSnapshot) {
         guard let b = item.button else { return }
