@@ -11,14 +11,57 @@
   html,body{margin:0}
   @keyframes ucbLive{0%,100%{opacity:1}50%{opacity:.35}}
   .ucb-menu-item:hover{background:rgba(30,28,24,.06)!important;}
+
+  /* ===== 菜单栏 app 视图开关(由 ?view= 切;默认=设计原型,浏览器预览用) ===== */
+  /* 弹窗模式:内容按窗口宽铺满(border-box),圆角/边框交给原生 NSPopover,网页不画 */
+  body.view-popover #page{ padding:0!important; min-height:0!important; gap:0!important; background:transparent!important; }
+  body.view-popover #fullWindow{ display:none!important; }
+  body.view-popover #mbWrap{ width:100%!important; max-width:none!important; }
+  body.view-popover #mbPill, body.view-popover #mbCaret{ display:none!important; }
+  body.view-popover #mbPrefs{ display:none!important; }   /* 暂无设置项,先藏死按钮 */
+  body.view-popover #mbPop{ position:static!important; display:block!important; right:auto!important; top:auto!important; width:100%!important; box-sizing:border-box!important; border:0!important; border-radius:0!important; box-shadow:none!important; }
+  /* 完整窗口模式:只留仪表盘 */
+  body.view-full #mbWrap{ display:none!important; }
 </style>
 </head>
 <body>
+<script>
+/* 菜单栏 app 视图开关 + JS→原生桥(独立于下方数据/图表逻辑,浏览器里是无害 no-op) */
+(function(){
+  var v = new URLSearchParams(location.search).get('view');
+  if (v === 'popover' || v === 'full') document.body.classList.add('view-' + v);
 
-<div style="min-height:100vh; box-sizing:border-box; background:radial-gradient(900px 480px at 84% -14%, rgba(217,119,87,.07), transparent 58%), #EBE9E4; color:#1E1C18; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; -webkit-font-smoothing:antialiased; line-height:1.45; padding:30px 18px 64px; display:flex; flex-direction:column; align-items:center; gap:18px;">
+  window.__appAction = function(name, data){
+    try {
+      if (window.webkit && webkit.messageHandlers && webkit.messageHandlers.app)
+        webkit.messageHandlers.app.postMessage(Object.assign({ action: name }, data || {}));
+    } catch (e) {}
+  };
+
+  document.addEventListener('DOMContentLoaded', function(){
+    var ob = document.getElementById('mbOpen');
+    if (ob) ob.addEventListener('click', function(){ window.__appAction('openFull'); });
+    var qb = document.getElementById('mbQuit');
+    if (qb) qb.addEventListener('click', function(){ window.__appAction('quit'); });
+  });
+
+  // 弹窗模式:把内容真实高度报给原生,让 NSPopover 自适配(不裁切/不留白)
+  if (v === 'popover') {
+    var lastH = 0;
+    setInterval(function(){
+      var el = document.getElementById('mbPop');
+      if (!el) return;
+      var r = el.getBoundingClientRect(), h = Math.ceil(r.height), w = Math.ceil(r.width);
+      if (h && Math.abs(h - lastH) > 1) { lastH = h; window.__appAction('resize', { h: h, w: w }); }
+    }, 600);
+  }
+})();
+</script>
+
+<div id="page" style="min-height:100vh; box-sizing:border-box; background:radial-gradient(900px 480px at 84% -14%, rgba(217,119,87,.07), transparent 58%), #EBE9E4; color:#1E1C18; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; -webkit-font-smoothing:antialiased; line-height:1.45; padding:30px 18px 64px; display:flex; flex-direction:column; align-items:center; gap:18px;">
 
   <!-- ===== 菜单栏小窗 + 快捷弹窗 ===== -->
-  <div style="position:relative; width:100%; max-width:780px;">
+  <div id="mbWrap" style="position:relative; width:100%; max-width:780px;">
     <div id="mbPill" style="height:33px; border-radius:9px; background:rgba(255,255,255,.82); -webkit-backdrop-filter:blur(18px) saturate(1.3); backdrop-filter:blur(18px) saturate(1.3); border:1px solid rgba(30,28,24,.1); box-shadow:inset 0 1px 0 rgba(255,255,255,.8), 0 4px 14px -6px rgba(30,28,24,.22); display:flex; align-items:center; gap:12px; padding:0 13px; font-size:12.5px; color:#847F76; cursor:pointer; user-select:none;">
       <span style="width:7px; height:7px; border-radius:50%; background:#D97757; box-shadow:0 0 7px rgba(217,119,87,.55); animation:ucbLive 2.4s ease-in-out infinite;"></span>
       <span style="font-size:11px; color:#ABA59C; letter-spacing:.03em; margin-right:auto;">常驻菜单栏 · 点开 ↕</span>
@@ -74,13 +117,13 @@
         <span style="flex:1;">打开完整窗口</span>
         <span style="opacity:.4; font-size:12px;">⌘O</span>
       </div>
-      <div class="ucb-menu-item" style="display:flex; align-items:center; gap:11px; padding:7px 9px; border-radius:7px; font-size:13px; color:#1E1C18; cursor:pointer;">
+      <div id="mbPrefs" class="ucb-menu-item" style="display:flex; align-items:center; gap:11px; padding:7px 9px; border-radius:7px; font-size:13px; color:#1E1C18; cursor:pointer;">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><line x1="3" y1="5.5" x2="13" y2="5.5"></line><line x1="3" y1="10.5" x2="13" y2="10.5"></line><circle cx="10" cy="5.5" r="1.9" fill="currentColor" stroke="none"></circle><circle cx="6" cy="10.5" r="1.9" fill="currentColor" stroke="none"></circle></svg>
         <span style="flex:1;">偏好设置</span>
         <span style="opacity:.4; font-size:12px;">⌘,</span>
       </div>
       <div style="height:0.5px; background:rgba(30,28,24,.09); margin:6px 9px;"></div>
-      <div class="ucb-menu-item" style="display:flex; align-items:center; gap:11px; padding:7px 9px; border-radius:7px; font-size:13px; color:#1E1C18; cursor:pointer;">
+      <div id="mbQuit" class="ucb-menu-item" style="display:flex; align-items:center; gap:11px; padding:7px 9px; border-radius:7px; font-size:13px; color:#1E1C18; cursor:pointer;">
         <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="8" y1="2.5" x2="8" y2="7.5"></line><path d="M4.8 4.6 A4.6 4.6 0 1 0 11.2 4.6"></path></svg>
         <span style="flex:1;">退出</span>
         <span style="opacity:.4; font-size:12px;">⌘Q</span>
@@ -89,7 +132,7 @@
   </div>
 
   <!-- ===== 完整窗口 ===== -->
-  <div style="width:100%; max-width:780px; background:#FFFFFF; border:1px solid rgba(30,28,24,.1); border-radius:16px; overflow:hidden; box-shadow:0 26px 60px -22px rgba(30,28,24,.28), 0 5px 16px -8px rgba(30,28,24,.14);">
+  <div id="fullWindow" style="width:100%; max-width:780px; background:#FFFFFF; border:1px solid rgba(30,28,24,.1); border-radius:16px; overflow:hidden; box-shadow:0 26px 60px -22px rgba(30,28,24,.28), 0 5px 16px -8px rgba(30,28,24,.14);">
 
     <div style="display:flex; align-items:center; gap:9px; padding:13px 16px; border-bottom:1px solid rgba(30,28,24,.08); background:#FBFAF8;">
       <span style="display:flex; gap:8px;">
@@ -462,17 +505,26 @@ document.addEventListener("DOMContentLoaded", async function(){
     for(var t in L){ var x=L[t]&&L[t][win]; if(x&&x.pct!=null&&(best===null||x.pct>best.pct)) best={pct:x.pct,resetAt:x.resetAt}; }
     return best;
   }
+  // 限额按已用% 分 4 档配色(跟菜单栏环一致):绿→金→橙→红(≥80%)
+  function limitColor(pct){
+    if(pct==null) return {bar:"#D8D3CB", text:"#ABA59C"};
+    if(pct<50)  return {bar:"linear-gradient(90deg,#6FC07F,#54B266)", text:"#3C8A4E"};
+    if(pct<70)  return {bar:"linear-gradient(90deg,#EFC65A,#E6B33C)", text:"#B5871C"};
+    if(pct<80)  return {bar:"linear-gradient(90deg,#EE9347,#E27D2C)", text:"#C2611B"};
+    return {bar:"linear-gradient(90deg,#E0584A,#D23F2E)", text:"#B23121"};
+  }
   function renderPillPop(){
     var f=aggLimit("fiveHour"), s=aggLimit("sevenDay");
-    if(f){ $("pill5h").textContent=f.pct+"%"; $("pop5hPct").textContent=f.pct+"%"; $("pop5hReset").textContent=fmtRemain(f.resetAt)||"—"; $("pop5hBar").style.width=Math.min(100,f.pct)+"%"; $("pop5hBar").style.background="linear-gradient(90deg,#E08B6B,#D97757)"; }
+    if(f){ var c5=limitColor(f.pct); $("pill5h").textContent=f.pct+"%"; $("pop5hPct").textContent=f.pct+"%"; $("pop5hPct").style.color=c5.text; $("pop5hReset").textContent=fmtRemain(f.resetAt)||"—"; $("pop5hBar").style.width=Math.min(100,f.pct)+"%"; $("pop5hBar").style.background=c5.bar; }
     else { $("pill5h").textContent="—"; $("pop5hPct").textContent="—"; $("pop5hReset").textContent="未接入"; $("pop5hBar").style.width="0%"; $("pop5hBar").style.background="#D8D3CB"; }
-    if(s){ $("pill7d").textContent=s.pct+"%"; $("pop7dPct").textContent=s.pct+"%"; $("pop7dReset").textContent=fmtRemain(s.resetAt)||"—"; $("pop7dBar").style.width=Math.min(100,s.pct)+"%"; $("pop7dBar").style.background="linear-gradient(90deg,#CA5C3E,#BE4A33)"; }
+    if(s){ var c7=limitColor(s.pct); $("pill7d").textContent=s.pct+"%"; $("pop7dPct").textContent=s.pct+"%"; $("pop7dPct").style.color=c7.text; $("pop7dReset").textContent=fmtRemain(s.resetAt)||"—"; $("pop7dBar").style.width=Math.min(100,s.pct)+"%"; $("pop7dBar").style.background=c7.bar; }
     else { $("pill7d").textContent="—"; $("pop7dPct").textContent="—"; $("pop7dReset").textContent="未接入"; $("pop7dBar").style.width="0%"; $("pop7dBar").style.background="#D8D3CB"; }
   }
   function clockHM(iso){ if(!iso) return ""; var d=new Date(iso); if(isNaN(d)) return ""; return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
   // 完整窗口的限额卡:跟着工具分页(全部 → 列出每个工具的 5h/7d)。pct 是「已用%」。
   function limitCard(toolName, winLabel, entry, color, grad, asOf){
     var has = entry && entry.pct!=null;
+    var lc = limitColor(has ? entry.pct : null);
     var pct = has? entry.pct+"%" : "—";
     var snap = (has && asOf) ? ' · 截至 '+clockHM(asOf) : '';
     var foot = has ? ((entry.resetAt? fmtRemain(entry.resetAt) : "已接入")+snap)
@@ -480,8 +532,8 @@ document.addEventListener("DOMContentLoaded", async function(){
     var tag = (data.tools&&data.tools.length>1) ? '<span style="font-size:10px; color:#ABA59C; margin-left:6px;">'+toolLabel(toolName)+'</span>' : '';
     return '<div style="background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:14px 16px;">'
       +'<div style="display:flex; align-items:baseline; justify-content:space-between;"><span style="font-size:12.5px; color:#847F76;">'+winLabel+tag+'</span>'
-      +'<span style="font-family:'+MONO+'; font-weight:600; font-size:29px; line-height:1; color:'+(has?color:"#ABA59C")+';">'+pct+(has?'<span style="font-size:11px; font-weight:500; color:#ABA59C; margin-left:3px;">已用</span>':'')+'</span></div>'
-      +'<div style="height:8px; border-radius:6px; background:#ECEAE5; margin:12px 0 9px; overflow:hidden;"><i style="display:block; height:100%; width:'+(has?Math.min(100,entry.pct):0)+'%; border-radius:6px; background:'+(has?grad:"#D8D3CB")+';"></i></div>'
+      +'<span style="font-family:'+MONO+'; font-weight:600; font-size:29px; line-height:1; color:'+(has?lc.text:"#ABA59C")+';">'+pct+(has?'<span style="font-size:11px; font-weight:500; color:#ABA59C; margin-left:3px;">已用</span>':'')+'</span></div>'
+      +'<div style="height:8px; border-radius:6px; background:#ECEAE5; margin:12px 0 9px; overflow:hidden;"><i style="display:block; height:100%; width:'+(has?Math.min(100,entry.pct):0)+'%; border-radius:6px; background:'+(has?lc.bar:"#D8D3CB")+';"></i></div>'
       +'<div style="font-family:'+MONO+'; font-size:11.5px; color:#ABA59C;">'+foot+'</div></div>';
   }
   function renderLimitCards(){

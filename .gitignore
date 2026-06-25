@@ -4,6 +4,9 @@ usage.json
 # 依赖(打包阶段可能引入)
 node_modules/
 
+# Swift app 编译产物(.app 包,可由 app/build.sh 重新生成)
+app/build/
+
 # macOS
 .DS_Store
 
