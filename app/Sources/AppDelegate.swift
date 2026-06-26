@@ -24,9 +24,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         store.onUpdate = { [weak self] snap in self?.pill.update(with: snap) }
 
-        // 已有引擎在跑就复用,否则拉起;就绪后开始轮询喂胶囊。
+        // 已有引擎在跑就复用,否则拉起;就绪后开始轮询喂胶囊 + 预加载弹窗(消除点开白屏)。
         engine.ensureRunning { [weak self] _ in
-            DispatchQueue.main.async { self?.store.start() }
+            DispatchQueue.main.async {
+                self?.store.start()
+                self?.popover.preload()
+            }
         }
     }
 

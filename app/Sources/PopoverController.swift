@@ -38,9 +38,14 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
+    }
+
+    // 引擎就绪后预加载一次,常驻留着。避免每次点开都重载 → 消除"先白一下"。
+    // 数据不靠重载刷新(引擎本就 60s 才重算),靠网页自身的 60s 自刷新保持新鲜。
+    func preload() {
+        webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
     }
 
     func close() { popover.performClose(nil) }
