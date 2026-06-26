@@ -30,8 +30,8 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
         // 用弱代理接消息:userContentController 会强持有 handler,直接 add(self) 会和
         // webView 互相强引用成循环。弱代理让这一环"松手",从根上断掉循环引用。
         cfg.userContentController.add(WeakScriptMessageHandler(self), name: "app")
-        webView.setValue(false, forKey: "drawsBackground") // 透出原生 popover 衬底(磨砂)
-        webView.autoresizingMask = [.width, .height]       // 随 popover 尺寸变化填满
+        webView.setValue(true, forKey: "drawsBackground") // 不依赖透明 WebView,避免只露出原生 popover 空壳
+        webView.autoresizingMask = [.width, .height]      // 随 popover 尺寸变化填满
 
         let vc = NSViewController()
         vc.view = webView
@@ -45,18 +45,16 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            reloadIfBlank()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            DispatchQueue.main.async { [weak self] in
+                self?.loadCurrentURL()
+            }
         }
     }
 
-    // 引擎就绪后预加载一次,常驻留着。避免每次点开都重载 → 消除"先白一下"。
-    // 数据不靠重载刷新(引擎本就 60s 才重算),靠网页自身的 60s 自刷新保持新鲜。
+    // 曾经尝试隐藏预加载来消除白屏,但 WKWebView 在 NSPopover 隐藏状态下偶发只绘制空壳。
+    // 这里保留接口但不预加载,改为弹窗显示后加载,优先保证内容稳定出现。
     func preload() {
-        loadCurrentURL()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
-            self?.reloadIfBlank()
-        }
     }
 
     // 胶囊工具偏好变化后,用新的 ?tool= 重载弹窗内容
@@ -99,16 +97,6 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
 
     private func loadCurrentURL() {
         webView.load(URLRequest(url: currentURL, cachePolicy: .reloadIgnoringLocalCacheData))
-    }
-
-    private func reloadIfBlank() {
-        let js = "document.getElementById('mbPop') ? document.getElementById('mbPop').innerText.trim().length : 0"
-        webView.evaluateJavaScript(js) { [weak self] result, error in
-            let textLength = (result as? NSNumber)?.intValue ?? 0
-            if error != nil || textLength == 0 {
-                self?.loadCurrentURL()
-            }
-        }
     }
 }
 
