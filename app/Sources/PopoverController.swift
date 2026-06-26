@@ -45,6 +45,7 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
         if popover.isShown {
             popover.performClose(nil)
         } else {
+            reloadIfBlank()
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         }
     }
@@ -52,12 +53,15 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
     // 引擎就绪后预加载一次,常驻留着。避免每次点开都重载 → 消除"先白一下"。
     // 数据不靠重载刷新(引擎本就 60s 才重算),靠网页自身的 60s 自刷新保持新鲜。
     func preload() {
-        webView.load(URLRequest(url: currentURL, cachePolicy: .reloadIgnoringLocalCacheData))
+        loadCurrentURL()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+            self?.reloadIfBlank()
+        }
     }
 
     // 胶囊工具偏好变化后,用新的 ?tool= 重载弹窗内容
     func reload() {
-        webView.load(URLRequest(url: currentURL, cachePolicy: .reloadIgnoringLocalCacheData))
+        loadCurrentURL()
     }
 
     func close() { popover.performClose(nil) }
@@ -91,6 +95,20 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
         if let d = v as? Double { return CGFloat(d) }
         if let i = v as? Int { return CGFloat(i) }
         return nil
+    }
+
+    private func loadCurrentURL() {
+        webView.load(URLRequest(url: currentURL, cachePolicy: .reloadIgnoringLocalCacheData))
+    }
+
+    private func reloadIfBlank() {
+        let js = "document.getElementById('mbPop') ? document.getElementById('mbPop').innerText.trim().length : 0"
+        webView.evaluateJavaScript(js) { [weak self] result, error in
+            let textLength = (result as? NSNumber)?.intValue ?? 0
+            if error != nil || textLength == 0 {
+                self?.loadCurrentURL()
+            }
+        }
     }
 }
 
