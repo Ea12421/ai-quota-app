@@ -20,7 +20,9 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
         webView = WKWebView(frame: NSRect(x: 0, y: 0, width: kPopoverWidth, height: 380), configuration: cfg)
         super.init()
 
-        cfg.userContentController.add(self, name: "app")
+        // 用弱代理接消息:userContentController 会强持有 handler,直接 add(self) 会和
+        // webView 互相强引用成循环。弱代理让这一环"松手",从根上断掉循环引用。
+        cfg.userContentController.add(WeakScriptMessageHandler(self), name: "app")
         webView.setValue(false, forKey: "drawsBackground") // 透出原生 popover 衬底(磨砂)
         webView.autoresizingMask = [.width, .height]       // 随 popover 尺寸变化填满
 
@@ -66,5 +68,14 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
         if let d = v as? Double { return CGFloat(d) }
         if let i = v as? Int { return CGFloat(i) }
         return nil
+    }
+}
+
+// 弱代理:userContentController 强持有它,它只弱持有真正的 handler → 打破循环引用。
+private final class WeakScriptMessageHandler: NSObject, WKScriptMessageHandler {
+    private weak var target: WKScriptMessageHandler?
+    init(_ target: WKScriptMessageHandler) { self.target = target }
+    func userContentController(_ ucc: WKUserContentController, didReceive message: WKScriptMessage) {
+        target?.userContentController(ucc, didReceive: message)
     }
 }
