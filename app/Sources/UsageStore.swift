@@ -24,6 +24,9 @@ final class UsageStore {
 
     func stop() { timer?.invalidate(); timer = nil }
 
+    // 偏好变化后立刻重算一次(不等下个 30s 轮询)
+    func refresh() { fetch() }
+
     private func fetch() {
         guard let url = URL(string: "http://127.0.0.1:\(port)/api/usage.json") else { return }
         var req = URLRequest(url: url)
@@ -37,7 +40,7 @@ final class UsageStore {
         }.resume()
     }
 
-    // 跨 Claude/Codex 的 5h/7d 四条里取已用 % 最高的那条。
+    // 按偏好取一条已用%:auto=跨 Claude/Codex 的 5h/7d 四条取最高;指定工具=只看该工具两条。
     static func tightest(_ limits: Limits?) -> PillSnapshot {
         var best: (letter: String, pct: Double)?
         func consider(_ tool: Limits.Tool?, _ letter: String) {
@@ -47,8 +50,15 @@ final class UsageStore {
                 if best == nil || w.pct > best!.pct { best = (letter, w.pct) }
             }
         }
-        consider(limits?.claudeCode, "C")
-        consider(limits?.codex, "X")
+        switch Settings.pillTool {
+        case .auto:
+            consider(limits?.claudeCode, "C")
+            consider(limits?.codex, "X")
+        case .claudeCode:
+            consider(limits?.claudeCode, "C")
+        case .codex:
+            consider(limits?.codex, "X")
+        }
         if let b = best { return PillSnapshot(toolLetter: b.letter, pct: b.pct, hasLimit: true) }
         return PillSnapshot(toolLetter: "", pct: 0, hasLimit: false)
     }

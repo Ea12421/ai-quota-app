@@ -16,6 +16,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         popover = PopoverController(baseURL: base, onOpenFull: { [weak self] in
             self?.openMainWindow()
+        }, onToolChange: { [weak self] in
+            self?.store.refresh()   // 偏好已存(在 setTool 里);网页已就地切换,这里只刷新菜单栏胶囊
         })
         mainWindow = MainWindowController(baseURL: base)
         pill = StatusPill(onClick: { [weak self] button in

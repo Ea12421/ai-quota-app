@@ -9,11 +9,18 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
     private let popover = NSPopover()
     private let webView: WKWebView
     private let onOpenFull: () -> Void
-    private let url: URL
+    private let onToolChange: () -> Void
+    private let baseURL: URL
 
-    init(baseURL: URL, onOpenFull: @escaping () -> Void) {
+    // 弹窗 URL 带当前胶囊工具偏好,网页按它决定限额看哪个工具
+    private var currentURL: URL {
+        URL(string: baseURL.absoluteString + "/?view=popover&tool=\(Settings.pillTool.rawValue)")!
+    }
+
+    init(baseURL: URL, onOpenFull: @escaping () -> Void, onToolChange: @escaping () -> Void) {
         self.onOpenFull = onOpenFull
-        self.url = URL(string: baseURL.absoluteString + "/?view=popover")!
+        self.onToolChange = onToolChange
+        self.baseURL = baseURL
 
         let cfg = WKWebViewConfiguration()
         cfg.userContentController = WKUserContentController()
@@ -45,7 +52,12 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
     // 引擎就绪后预加载一次,常驻留着。避免每次点开都重载 → 消除"先白一下"。
     // 数据不靠重载刷新(引擎本就 60s 才重算),靠网页自身的 60s 自刷新保持新鲜。
     func preload() {
-        webView.load(URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData))
+        webView.load(URLRequest(url: currentURL, cachePolicy: .reloadIgnoringLocalCacheData))
+    }
+
+    // 胶囊工具偏好变化后,用新的 ?tool= 重载弹窗内容
+    func reload() {
+        webView.load(URLRequest(url: currentURL, cachePolicy: .reloadIgnoringLocalCacheData))
     }
 
     func close() { popover.performClose(nil) }
@@ -59,6 +71,12 @@ final class PopoverController: NSObject, WKScriptMessageHandler {
             onOpenFull()
         case "quit":
             NSApp.terminate(nil)
+        case "setTool":
+            // 弹窗里切了"胶囊盯哪个工具" → 存偏好,再回调刷新胶囊 + 重载弹窗
+            if let raw = body["tool"] as? String, let t = PillTool(rawValue: raw) {
+                Settings.pillTool = t
+                onToolChange()
+            }
         case "resize":
             // 宽度固定(内容 width:100% 自适配),只按内容真实高度调高;防 NaN/Infinity/超大值
             guard let h = numeric(body["h"]), h.isFinite else { break }

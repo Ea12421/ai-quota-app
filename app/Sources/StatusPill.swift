@@ -27,7 +27,7 @@ final class StatusPill {
         }
     }
 
-    // 右键菜单:开机自启开关 + 退出
+    // 右键菜单:开机自启 + 退出(胶囊盯哪个工具的切换放在左键弹窗里,更显眼)
     private func showMenu(from button: NSStatusBarButton) {
         let menu = NSMenu()
         let login = NSMenuItem(title: "开机自启", action: #selector(toggleLogin), keyEquivalent: "")
