@@ -31,6 +31,140 @@ const NOTICE = "美元为按 API 价折合的等价价值,非真实账单";
 // 数据源注册表(顺序决定工具展示顺序)。加新 CLI 就在这里追加。
 const SOURCES = [claude, codex];
 
+const VELOCITY_BUCKET_MINUTES = 15;
+const VELOCITY_BUCKET_MS = VELOCITY_BUCKET_MINUTES * 60 * 1000;
+const VELOCITY_HISTORY_MS = 24 * 60 * 60 * 1000;
+const LIMIT_SNAPSHOT_KEEP = 1000;
+
+function toIso(value) {
+  const time = Date.parse(value);
+  return Number.isFinite(time) ? new Date(time).toISOString() : null;
+}
+
+function finiteNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function addMetric(target, event) {
+  target.tok += event.tok || 0;
+  target.usd += event.usd || 0;
+  target.modelCallCount += 1;
+}
+
+function materializeVelocityWindow(events, generatedAtMs, minutes) {
+  const sinceMs = generatedAtMs - minutes * 60 * 1000;
+  const byTool = {};
+  const out = { tok: 0, usd: 0, modelCallCount: 0, byTool };
+  for (const event of events) {
+    if (event.timeMs < sinceMs || event.timeMs > generatedAtMs) continue;
+    addMetric(out, event);
+    const toolRow = byTool[event.tool] || (byTool[event.tool] = { tok: 0, usd: 0, modelCallCount: 0 });
+    addMetric(toolRow, event);
+  }
+  const hours = minutes / 60;
+  const finish = (row) => {
+    row.tok = Math.round(row.tok);
+    row.usd = round4(row.usd);
+    row.tokPerHour = Math.round(row.tok / hours);
+    row.usdPerHour = round4(row.usd / hours);
+    return row;
+  };
+  for (const row of Object.values(byTool)) finish(row);
+  return {
+    minutes,
+    since: new Date(sinceMs).toISOString(),
+    until: new Date(generatedAtMs).toISOString(),
+    ...finish(out),
+  };
+}
+
+function buildUsageVelocity(events, generatedAtIso) {
+  const generatedAtMs = Date.parse(generatedAtIso);
+  const normalized = events
+    .map((event) => {
+      const timeMs = Date.parse(event.timestamp);
+      return Number.isFinite(timeMs) ? { ...event, timeMs } : null;
+    })
+    .filter(Boolean)
+    .filter((event) => event.timeMs <= generatedAtMs + 5 * 60 * 1000)
+    .sort((a, b) => a.timeMs - b.timeMs);
+
+  const bucketMap = new Map();
+  const bucketSince = generatedAtMs - VELOCITY_HISTORY_MS;
+  for (const event of normalized) {
+    if (event.timeMs < bucketSince || event.timeMs > generatedAtMs) continue;
+    const startMs = Math.floor(event.timeMs / VELOCITY_BUCKET_MS) * VELOCITY_BUCKET_MS;
+    const key = String(startMs);
+    const row = bucketMap.get(key) || { startMs, tok: 0, usd: 0, modelCallCount: 0, byTool: {} };
+    addMetric(row, event);
+    const toolRow = row.byTool[event.tool] || (row.byTool[event.tool] = { tok: 0, usd: 0, modelCallCount: 0 });
+    addMetric(toolRow, event);
+    bucketMap.set(key, row);
+  }
+  const buckets = [...bucketMap.values()]
+    .sort((a, b) => a.startMs - b.startMs)
+    .map((row) => {
+      for (const toolRow of Object.values(row.byTool)) {
+        toolRow.tok = Math.round(toolRow.tok);
+        toolRow.usd = round4(toolRow.usd);
+      }
+      return {
+        start: new Date(row.startMs).toISOString(),
+        end: new Date(row.startMs + VELOCITY_BUCKET_MS).toISOString(),
+        tok: Math.round(row.tok),
+        usd: round4(row.usd),
+        modelCallCount: row.modelCallCount,
+        byTool: row.byTool,
+      };
+    });
+
+  const latestEvent = normalized.length ? normalized[normalized.length - 1] : null;
+  return {
+    bucketMinutes: VELOCITY_BUCKET_MINUTES,
+    generatedAt: generatedAtIso,
+    latestEventAt: latestEvent ? new Date(latestEvent.timeMs).toISOString() : null,
+    windows: {
+      "15m": materializeVelocityWindow(normalized, generatedAtMs, 15),
+      "60m": materializeVelocityWindow(normalized, generatedAtMs, 60),
+    },
+    buckets,
+  };
+}
+
+function normalizeUsageEvent(tool, event) {
+  if (!event || typeof event !== "object") return null;
+  const timestamp = toIso(event.timestamp);
+  if (!timestamp) return null;
+  const tok = finiteNumber(event.tok);
+  const usd = finiteNumber(event.usd);
+  return {
+    timestamp,
+    tool,
+    tok: tok === null ? 0 : tok,
+    usd: usd === null ? 0 : usd,
+  };
+}
+
+function normalizeLimitSnapshot(tool, snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const timestamp = toIso(snapshot.timestamp);
+  if (!timestamp) return null;
+  const cleanEntry = (entry) => {
+    if (!entry || typeof entry !== "object") return null;
+    const pct = finiteNumber(entry.pct);
+    const resetAt = toIso(entry.resetAt);
+    if (pct === null && resetAt === null) return null;
+    return { pct: pct === null ? null : Math.max(0, Math.min(100, Math.round(pct * 10) / 10)), resetAt };
+  };
+  return {
+    tool,
+    timestamp,
+    fiveHour: cleanEntry(snapshot.fiveHour),
+    sevenDay: cleanEntry(snapshot.sevenDay),
+  };
+}
+
 // ---- 合并所有数据源,产出统一数据契约 ----
 function compute() {
   const results = SOURCES.map((s) => ({ tool: s.TOOL, ...s.collect() }));
@@ -48,6 +182,8 @@ function compute() {
   const projectLastActive = {}; // projectId -> YYYY-MM-DD
   const sessions = [];
   const agentDaily = {}; // date -> tool -> {modelCallCount,userTurnCount}
+  const usageEvents = [];
+  const limitSnapshots = [];
   let minDay = null;
   let maxDay = null;
   const today = todayKeyUTC8(); // 未来日期/时钟偏移的记录夹到今天:避免生成几百万空天(OOM)且区间锚定错乱
@@ -101,6 +237,18 @@ function compute() {
   for (const r of results) {
     Object.assign(pricing, r.pricing || {});
     if (Array.isArray(r.sessions)) sessions.push(...r.sessions);
+    if (Array.isArray(r.usageEvents)) {
+      for (const event of r.usageEvents) {
+        const normalized = normalizeUsageEvent(r.tool, event);
+        if (normalized) usageEvents.push(normalized);
+      }
+    }
+    if (Array.isArray(r.limitSnapshots)) {
+      for (const snapshot of r.limitSnapshots) {
+        const normalized = normalizeLimitSnapshot(r.tool, snapshot);
+        if (normalized) limitSnapshots.push(normalized);
+      }
+    }
     for (const [date, stats] of Object.entries(r.agentDaily || {})) addAgentStats(date, r.tool, stats);
     for (const e of r.entries) {
       modelTool[e.model] = r.tool;
@@ -185,12 +333,19 @@ function compute() {
   const sortedSessions = sessions
     .filter((s) => s && s.id && s.tool)
     .sort((a, b) => Date.parse(b.endedAt || b.startedAt || 0) - Date.parse(a.endedAt || a.startedAt || 0));
+  const updatedAt = new Date().toISOString();
+  const sortedLimitSnapshots = limitSnapshots
+    .filter((s) => s.fiveHour || s.sevenDay)
+    .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
+    .slice(-LIMIT_SNAPSHOT_KEEP);
 
   return {
-    updatedAt: new Date().toISOString(),
+    updatedAt,
     limits,
     daily,
     sessions: sortedSessions,
+    usageVelocity: buildUsageVelocity(usageEvents, updatedAt),
+    limitSnapshots: sortedLimitSnapshots,
     tools,
     models: sortedModels,
     projects,

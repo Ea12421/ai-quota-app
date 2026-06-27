@@ -112,7 +112,7 @@ app/build/用量看板.app
 - 工具切换：全部 / Claude Code / Codex。
 - 时间切换：当天 / 近 7 天 / 近 30 天 / 全部。
 - 指标切换：Token / 美元。
-- Burn-down Forecast：基于 5h / 7d 限额百分比和 reset 时间做燃尽判断。
+- Burn-down Forecast：基于 5h / 7d 限额百分比、reset 时间、15m / 60m 短窗口速度和窗口平均速度做燃尽判断。
 - Real Cost View：突出等价 USD、Fresh Tokens、Cache Read Share。
 - Today's Top Project：显示今日最高消耗项目。
 - Project Monitor：按项目聚合当前区间用量、成本、Fresh Tokens、Cache Read Share。
@@ -144,6 +144,7 @@ UI 数据来源只来自本地 `/api/usage.json`，不直接读取 Claude / Code
 - 支持 input / output / cache write / cache read 四类拆分。
 - 支持项目归因，默认展示脱敏项目名，不暴露完整本机路径。
 - 支持 5h / 7d 限额快照。
+- 支持 `limitSnapshots` 和 `usageVelocity` 派生输出，用于短窗口额度速度预测。
 - 输出统一 JSON，供 `web/` 和 `app/` 使用。
 
 手动启动数据服务：
@@ -187,7 +188,7 @@ GET http://127.0.0.1:8765/quota
 node engine/quota-api.mjs
 ```
 
-它会读取本地 `usage.json` 的 `limits` 字段，输出 5h / 7d 双窗口策略：
+它会读取本地 `usage.json` 的 `limits`、`limitSnapshots` 和 `usageVelocity` 字段，输出 5h / 7d 双窗口策略：
 
 - `windows.5h`: 判断当前能否继续推进、是否启动新 Agent、是否需要暂停运行中 Agent。
 - `windows.7d`: 判断是否允许多 Agent 并发、新项目、大任务。
@@ -198,6 +199,17 @@ node engine/quota-api.mjs
 - `should_pause_running_agents`: 是否要求运行中 Agent 写 handoff 并暂停。
 - `should_resume_paused_agents`: 是否允许 Coordinator 恢复暂停队列。
 - `resume_after`: 建议恢复时间，通常比 `reset_at` 晚几分钟。
+- `windows.*.forecast`: 额度速度预测，包含 basis、pct/hour、ETA、是否会早于 reset 耗尽。
+- `windows.*.token_velocity`: 最近 15m / 60m token/hour 辅助速度，不代表绝对剩余 token。
+- `windows.*.data_freshness`: `fresh` / `stale` / `unknown`，用于避免陈旧快照误报安全。
+
+v0.5 的预测口径：
+
+1. 优先从 rate limit 百分比快照计算最近 15 分钟速度。
+2. 再计算最近 60 分钟速度。
+3. 样本不足时回退窗口平均速度。
+4. 取最保守的百分比速度作为 ETA basis。
+5. token/hour 只做辅助解释，不换算成“还能用多少 token”。
 
 状态合成规则：
 
@@ -289,6 +301,13 @@ engine/usage-data.mjs  聚合、脱敏、生成统一 usage.json
       "asOf": "ISO time"
     }
   },
+  "usageVelocity": {
+    "windows": {
+      "15m": { "tokPerHour": 0, "usdPerHour": 0, "modelCallCount": 0, "byTool": {} },
+      "60m": { "tokPerHour": 0, "usdPerHour": 0, "modelCallCount": 0, "byTool": {} }
+    }
+  },
+  "limitSnapshots": [],
   "projects": [],
   "daily": []
 }
@@ -301,6 +320,8 @@ engine/usage-data.mjs  聚合、脱敏、生成统一 usage.json
 - `projects[]`: 当前可选项目列表，项目路径默认脱敏。
 - `tokBreakdown`: input / output / cache write / cache read。
 - `usdBreakdown`: input / output / cache write / cache read 的等价 USD。
+- `usageVelocity`: 15m / 60m token/hour 聚合，只输出派生统计。
+- `limitSnapshots`: 最近限额百分比快照，用于 quota API 和 Burn-down 的短窗口预测。
 - 价格是按本地价格表折算的等价值，不等于真实账单。
 
 ## 隐私与安全边界
@@ -406,6 +427,7 @@ git ls-files .agent-team usage.json app/build
 - v0.2: Burn-down Forecast、Real Cost View、今日 Top 项目。
 - v0.3: Project Focus Drill-down、项目筛选联动、tooltip 边缘避让。
 - v0.4: Project Monitor、项目视图增强、任务标签 / 手动归因、Agent 使用趋势、quota API 常驻。
+- v0.5: Quota Velocity Forecast，基于 15m / 60m / window average 的最保守额度速度预测。
 - 最新 UI 增强: 完整窗口多个区块可折叠，状态本地持久化。
 
 后续可继续做：
@@ -414,3 +436,4 @@ git ls-files .agent-team usage.json app/build
 - 更可靠的 Agent 趋势数据源。
 - 任务标签批量管理和导出。
 - quota API 与外部 Coordinator 工具的更深接入。
+- 错误 / retry / overloaded 浪费统计。

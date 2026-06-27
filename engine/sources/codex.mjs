@@ -124,6 +124,8 @@ export function collect() {
   const projects = {};
   const sessions = [];
   const agentDaily = {};
+  const usageEvents = [];
+  const limitSnapshots = [];
   let filesWithTok = 0;
   let filesSkipped = 0;
   let latestRL = null; // 最新一条 rate_limits 快照(Codex 自带的 5h/7d 额度)
@@ -208,6 +210,14 @@ export function collect() {
           if (!Number.isNaN(t) && (!latestRL || t > latestRL.t)) {
             latestRL = { ts: o.timestamp, t, rl: o.payload.rate_limits };
           }
+          const snapshot = mapRateLimits(o.payload.rate_limits);
+          if (snapshot && Number.isFinite(t)) {
+            limitSnapshots.push({
+              timestamp: new Date(t).toISOString(),
+              fiveHour: snapshot.fiveHour,
+              sevenDay: snapshot.sevenDay,
+            });
+          }
         }
         const info = o.payload.info;
         if (!info || !info.total_token_usage) continue;
@@ -256,6 +266,20 @@ export function collect() {
         const callUsd = usdBreakdownOf(model, { input, cached, output });
         addBreakdown(session.tokBreakdown, callBreak);
         addBreakdown(session.usdBreakdown, callUsd);
+        usageEvents.push({
+          timestamp: new Date(Date.parse(o.timestamp)).toISOString(),
+          project: curProject,
+          model,
+          tok: callBreak.input + callBreak.output + callBreak.cacheWrite + callBreak.cacheRead,
+          usd: round4(callUsd.input + callUsd.output + callUsd.cacheRead),
+          tokBreakdown: callBreak,
+          usdBreakdown: {
+            input: round4(callUsd.input),
+            output: round4(callUsd.output),
+            cacheWrite: 0,
+            cacheRead: round4(callUsd.cacheRead),
+          },
+        });
 
         (agg[day] || (agg[day] = {}));
         (agg[day][curProject.id] || (agg[day][curProject.id] = {}));
@@ -339,5 +363,7 @@ export function collect() {
     stats: { filesWithTok, filesSkipped },
     sessions,
     agentDaily,
+    usageEvents,
+    limitSnapshots,
   };
 }

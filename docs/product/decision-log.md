@@ -4,7 +4,7 @@
 
 负责人: 产品经理
 
-更新时间: 2026-06-26
+更新时间: 2026-06-27
 
 ## 使用规则
 
@@ -136,6 +136,43 @@
 - 不读取或展示对话正文。
 - session/window 下钻和当前窗口上下文监控继续延后。
 
+### D-010: v0.5 做短窗口额度速度预测
+
+日期: 2026-06-27
+
+决策: v0.5 将 Burn-down Forecast 从窗口平均预测升级为 15m / 60m / window average 三种速度口径，并取最保守口径作为 ETA 和 quota API gate 的依据。
+
+理由:
+
+- 用户需要在额度快速消耗时提前暂停 Agent、写 handoff、进入暂停队列。
+- 单纯窗口平均预测会低估短时间爆量风险。
+- Codex rate limit 日志可提供真实百分比快照；ClaudeMeter 只有当前快照时可回退到窗口平均。
+
+影响:
+
+- 新增 `limitSnapshots` 用于百分比速度。
+- 新增 `usageVelocity` 用于 token/hour 辅助解释。
+- `quota-api` 输出 `forecast`、`token_velocity`、`data_freshness`。
+- 数据不足时必须明确 basis 为 `insufficient` 或回退 `window_avg`。
+
+### D-011: token/hour 只做辅助，不换算绝对 quota
+
+日期: 2026-06-27
+
+决策: v0.5 可以展示 15m / 60m token/hour，但不能把 token/hour 直接换算成“还能用多少 token”。
+
+理由:
+
+- 本地数据源没有官方绝对 quota token 容量。
+- 不同模型、缓存、账号策略会让 token 与额度百分比之间关系不稳定。
+- 编造绝对剩余额度会误导用户和 Atmo gate。
+
+影响:
+
+- ETA 优先用 rate limit 百分比快照速度。
+- 无短窗口百分比样本时回退窗口平均百分比速度。
+- token velocity 只用于解释“最近是否爆量”，不作为绝对 quota 口径。
+
 ## 待确认问题
 
 ### Q-001: 是否在 v0.2 显示 RMB 估算?
@@ -152,9 +189,9 @@
 
 ### Q-003: 最近 1h / 3h token velocity 是否进入 v0.2?
 
-当前判断: 不作为必做。
+当前判断: v0.2 不做；v0.5 改为 15m / 60m velocity，并区分百分比速度和 token/hour 辅助速度。
 
-原因: 当前统一 entries 已按天聚合。若做真实小时速度，需要保留 timestamp 或新增小时聚合，不能为 v0.2 阻塞。
+原因: 现在已有 session / task 数据基础，可以低风险新增只读时间桶；但仍不做绝对剩余 token quota。
 
 ### Q-004: Product Agent 是否需要维护版本化专项 brief?
 
@@ -166,6 +203,6 @@
 - 当前窗口上下文监控。
 - 错误 / retry 浪费统计。
 - 模型降级省钱假设计算器。
-- 任务级成本和手动标签。
+- 任务标签批量管理、导出和自动归因。
 - 企业 BI、云同步、多用户权限。
 - 读取正文的语义分析和自动任务分类。

@@ -526,7 +526,34 @@ document.addEventListener("DOMContentLoaded", async function(){
   }
   function unknownForecast(tool, win, reason){
     var meta=windowMeta(win);
-    return { tool:tool||"", win:win, winShort:meta.short, winLabel:meta.label, status:"unknown", pctUsed:null, etaHours:null, willExhaustBeforeReset:false, text:reason||"限额数据不足，无法预测" };
+    return { tool:tool||"", win:win, winShort:meta.short, winLabel:meta.label, status:"unknown", pctUsed:null, etaHours:null, willExhaustBeforeReset:false, text:reason||"限额数据不足，无法预测", basisLabel:"数据不足", pctPerHour:null, freshness:"unknown" };
+  }
+  function sameReset(a,b){
+    if(!a || !b) return true;
+    var ta=Date.parse(a), tb=Date.parse(b);
+    if(!isFinite(ta) || !isFinite(tb)) return true;
+    return Math.abs(ta-tb)<=60000;
+  }
+  function pctRateFromSnapshots(tool, win, resetAt, asOfMs, minutes, label){
+    var since=asOfMs-minutes*60000;
+    var rows=(data.limitSnapshots||[]).map(function(s){
+      if(!s || s.tool!==tool) return null;
+      var entry=s[win], ts=Date.parse(s.timestamp), pct=entry ? finiteNumber(entry.pct) : null;
+      if(!isFinite(ts) || pct==null || !sameReset(entry&&entry.resetAt, resetAt)) return null;
+      if(ts<since || ts>asOfMs) return null;
+      return { ts:ts, pct:pct };
+    }).filter(Boolean).sort(function(a,b){ return a.ts-b.ts; });
+    if(rows.length<2) return null;
+    var elapsed=(rows[rows.length-1].ts-rows[0].ts)/MS_HOUR;
+    if(elapsed<0.02) return null;
+    var delta=rows[rows.length-1].pct-rows[0].pct;
+    if(delta<0) return null;
+    return { basis:minutes+"m", basisLabel:label, pctPerHour:delta/elapsed, samples:rows.length };
+  }
+  function tokenVelocityLine(tool){
+    var row=data.usageVelocity&&data.usageVelocity.windows&&data.usageVelocity.windows["15m"]&&data.usageVelocity.windows["15m"].byTool&&data.usageVelocity.windows["15m"].byTool[tool];
+    if(!row || !(row.tokPerHour>0)) return "";
+    return " · 15m "+fmtTok(row.tokPerHour)+"/h";
   }
   function forecastForWindow(tool, win){
     var L=data.limits||{}, lim=L[tool], meta=windowMeta(win), entry=lim&&lim[win];
@@ -540,13 +567,22 @@ document.addEventListener("DOMContentLoaded", async function(){
     var pctUsed=clamp(pct, 0, 100);
     var windowStart=resetMs - meta.hours*MS_HOUR;
     var elapsedHours=clamp((asOfMs-windowStart)/MS_HOUR, 0.05, meta.hours);
-    var pctPerHour=pctUsed/elapsedHours;
+    var options=[
+      pctRateFromSnapshots(tool, win, entry.resetAt, asOfMs, 15, "最近15分钟"),
+      pctRateFromSnapshots(tool, win, entry.resetAt, asOfMs, 60, "最近60分钟"),
+      { basis:"window_avg", basisLabel:"窗口平均", pctPerHour:pctUsed/elapsedHours, samples:null }
+    ].filter(Boolean);
+    options.sort(function(a,b){ return b.pctPerHour-a.pctPerHour; });
+    var chosen=options[0];
+    var pctPerHour=chosen ? chosen.pctPerHour : 0;
     var pctRemaining=Math.max(0, 100-pctUsed);
     var etaHours=pctPerHour>0 ? pctRemaining/pctPerHour : null;
     var will=etaHours!=null && (nowMs + etaHours*MS_HOUR) < resetMs;
-    var status=(pctUsed>=90 || (will && etaHours<=1)) ? "critical" : ((pctUsed>=75 || will) ? "watch" : "ok");
+    var ageMs=nowMs-asOfMs, staleMs=win==="fiveHour" ? 15*60000 : 6*MS_HOUR;
+    var freshness=!isFinite(ageMs) ? "unknown" : (ageMs>staleMs ? "stale" : "fresh");
+    var status=(pctUsed>=90 || (will && etaHours<=1)) ? "critical" : ((pctUsed>=75 || will || freshness==="stale") ? "watch" : "ok");
     var text=pctPerHour>0 ? (will ? "约 "+fmtDurationHours(etaHours)+" 后耗尽" : "预计 reset 先发生") : "当前速度不足以预测耗尽";
-    return { tool:tool, win:win, winShort:meta.short, winLabel:meta.label, status:status, pctUsed:pctUsed, resetAt:entry.resetAt, etaHours:etaHours, willExhaustBeforeReset:will, text:text, asOf:(lim&&lim.asOf)||data.updatedAt };
+    return { tool:tool, win:win, winShort:meta.short, winLabel:meta.label, status:status, pctUsed:pctUsed, resetAt:entry.resetAt, etaHours:etaHours, willExhaustBeforeReset:will, text:text, asOf:(lim&&lim.asOf)||data.updatedAt, basisLabel:chosen ? chosen.basisLabel : "数据不足", pctPerHour:pctPerHour, freshness:freshness };
   }
   function forecastSeverity(status){ return {critical:3, watch:2, ok:1, unknown:0}[status] || 0; }
   function bestForecast(toolFilter){
@@ -574,7 +610,9 @@ document.addEventListener("DOMContentLoaded", async function(){
   }
   function forecastLine(f){
     if(!f || f.status==="unknown") return "限额百分比预测 · "+(f&&f.text ? f.text : "限额数据不足，无法预测");
-    return "限额百分比预测 · "+f.text+" · 已用 "+Math.round(f.pctUsed)+"%";
+    var freshness=f.freshness==="stale" ? " · 快照偏旧" : "";
+    var rate=f.pctPerHour!=null ? " · "+f.basisLabel+" "+(Math.round(f.pctPerHour*10)/10)+"%/h" : "";
+    return "限额百分比预测 · "+f.text+" · 已用 "+Math.round(f.pctUsed)+"%"+rate+tokenVelocityLine(f.tool)+freshness;
   }
   function realCostSummary(){
     var tokB=zeroBreak(), usdB=zeroBreak();

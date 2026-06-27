@@ -2,9 +2,9 @@
 
 状态: Active
 
-负责人: AI Dashboard - Product
+负责人: 产品经理
 
-更新时间: 2026-06-26
+更新时间: 2026-06-27
 
 ## 1. 产品定位
 
@@ -41,7 +41,7 @@ AI 用量看板是一个本机运行的个人 AI usage decision dashboard。它�
 
 ## 4. 当前能力基线
 
-v0.1 已具备:
+当前已具备:
 
 - macOS 菜单栏常驻入口、小弹窗、完整窗口。
 - Claude Code / Codex 本地用量聚合。
@@ -50,17 +50,25 @@ v0.1 已具备:
 - 模型级 token / USD / pricing 展示。
 - 项目级聚合和项目筛选。
 - `tokBreakdown` / `usdBreakdown`: input、output、cacheWrite、cacheRead。
+- Burn-down Forecast、Real Cost View、今日 Top 项目。
+- Project Focus、Project Monitor、按项目自动用量。
+- 任务标签 / 手动归因。
+- Agent 使用趋势。
+- 本地 quota API 和菜单栏 App 常驻接入。
+- 区块折叠 / 展开。
 
 当前缺口:
 
-- 首屏还不能直接判断“会不会撞限额”。
-- 总 token 仍容易掩盖 fresh token 与 cache read 的差异。
-- 项目分布已有基础，但“今日谁在烧”还不够突出。
-- session/window、上下文占用、错误重试和任务级成本还没有下钻层。
+- Burn-down Forecast 第一版主要是窗口平均预测，不能充分反映最近 15 / 60 分钟突然加速。
+- quota API 需要把短窗口速度、ETA basis 和数据陈旧状态输出给 Atmo gate。
+- 完整 session/window 下钻、上下文占用、错误重试浪费统计还未产品化。
+- 任务标签已经支持手动归因，但批量管理、导出和自动归因未做。
 
 ## 5. 长期路线图
 
 ### v0.2 Decision Layer
+
+状态: 已完成。
 
 目标: 从“用了多少”变成“还能不能继续跑”。
 
@@ -74,41 +82,68 @@ v0.1 已具备:
 
 ### v0.3 Drill-down Layer
 
-目标: 从项目定位到具体窗口 / session。
+状态: 已完成低风险第一步；完整 session/window 下钻延后。
 
-候选功能:
+已完成:
+
+- Project Focus Drill-down。
+- 默认隐藏项目路径。
+- 项目筛选联动。
+- tooltip 边缘避让和项目分布空态修复。
+
+延后:
 
 - Project -> Session 列表。
 - session 起止时间、调用数、token、fresh token、cache read share。
 - 当前窗口上下文占用估算。
-- 多窗口并行时区分哪个窗口在烧。
 
-进入条件:
+### v0.4 Project Monitor + Usage Diagnostics
 
-- v0.2 指标稳定，项目级榜单能解释大部分异常上涨。
-- Dev 能在不破坏现有计费口径的前提下输出 session 粒度字段。
+状态: 已完成。
 
-### v0.4 Diagnostic Layer
+已完成:
 
-目标: 解释浪费、异常和高风险状态。
-
-候选功能:
-
-- 错误 / retry / overloaded / rate limit 相关浪费统计。
-- 上下文卫生提醒: 何时 clear、handoff、开新窗口。
-- 限额快照 stale 提醒。
-- 异常上涨解释: 项目、模型、cache、重试四个维度拆因。
-
-### v0.5 Analysis Layer
-
-目标: 支持长期使用方式复盘和策略优化。
-
-候选功能:
-
-- 任务级成本与手动标签。
-- 模型降级假设计算器。
+- Project Monitor。
+- Project View Enhancement。
+- Session / Task 数据基础。
+- 任务标签 / 手动归因。
 - Agent 放大倍数趋势。
+- quota API 常驻。
+- 看板区块折叠 / 展开。
+
+### v0.5 Quota Velocity Forecast
+
+状态: 当前阶段。
+
+目标: 把额度判断从窗口平均预测升级为短窗口速度预测。
+
+必做:
+
+- 最近 15 分钟 / 60 分钟限额百分比速度。
+- 窗口平均速度兜底。
+- token/hour 辅助速度。
+- quota API 输出 `forecast`、`token_velocity`、`data_freshness`。
+- Dashboard 展示预测口径、百分比速度和快照陈旧提示。
+
+验收: 用户和 Atmo Agent 能判断当前是否继续、降速、checkpoint 或暂停。
+
+### v0.6 Drill-down / Diagnostics
+
+候选功能:
+
+- 完整 session/window 下钻。
+- 当前窗口上下文占用估算。
+- 错误 / retry / overloaded / rate limit 浪费统计。
+- 上下文卫生提醒: 何时 clear、handoff、开新窗口。
+- 任务标签批量管理和导出。
+
+### v0.7 Analysis Layer
+
+候选功能:
+
+- 模型降级假设计算器。
 - 长周期周报 / 月报。
+- 多任务复盘报表。
 
 ## 6. 功能优先级原则
 
@@ -141,19 +176,19 @@ P2:
 
 ## 7. 下一阶段推荐
 
-v0.2 Decision Layer 已完成并验收通过。下一阶段进入 v0.3 Drill-down Layer 的低风险第一步: Project Focus Drill-down。
+v0.4 已完成并验收通过。下一阶段进入 v0.5 Quota Velocity Forecast。
 
 本轮不直接做完整 session/window 数据模型，原因:
 
-- 当前 `usage.json` 仍只有 `projects[]` 和 `daily[].byProject`，没有正式 session/window 输出。
-- 强行做 session/window 会扩大 engine adapter 改动，增加隐私和数据口径风险。
-- v0.2 验收已留下更明确的 v0.3 小切口: 默认隐藏 home-relative project path。
+- 当前用户最关心的是额度快耗尽前的暂停和恢复判断。
+- v0.2 的窗口平均 Burn-down 已有价值，但对短时间爆量不够敏感。
+- session/window 下钻价值高，但对当前开工决策不如 velocity gate 直接。
 
-v0.3 第一轮推荐:
+v0.5 推荐:
 
-- 默认隐藏项目路径，降低截图分享时暴露个人项目结构的风险。
-- 选中项目后展示 Project Focus 面板。
-- 用现有 `daily.byProject` 和 `projects[]` 展示项目今日用量、当前区间用量、fresh/cache 结构和 Top 模型。
+- 新增 `usageVelocity` 和 `limitSnapshots` 派生输出。
+- quota API 用 15m / 60m / window average 合成最保守 ETA。
+- Dashboard 展示 basis、pct/hour、15m token/hour 和数据陈旧提示。
 
 当前执行 brief: `docs/product/next-brief.md`
 
@@ -161,6 +196,8 @@ v0.3 第一轮推荐:
 
 - `docs/product/v0.2-brief.md`
 - `docs/product/v0.3-brief.md`
+- `docs/product/v0.4-brief.md`
+- `docs/product/v0.5-brief.md`
 
 ## 8. 产品文档维护规则
 

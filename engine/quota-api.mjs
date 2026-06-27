@@ -28,9 +28,14 @@ const STATUS_RANK = {
 };
 
 const WINDOW_CONFIG = {
-  "5h": { sourceKey: "fiveHour", label: "5小时" },
-  "7d": { sourceKey: "sevenDay", label: "7天" },
+  "5h": { sourceKey: "fiveHour", label: "5小时", hours: 5, staleMs: 15 * 60 * 1000 },
+  "7d": { sourceKey: "sevenDay", label: "7天", hours: 168, staleMs: 6 * 60 * 60 * 1000 },
 };
+
+const SNAPSHOT_HORIZONS = [
+  { key: "15m", label: "最近15分钟", minutes: 15 },
+  { key: "60m", label: "最近60分钟", minutes: 60 },
+];
 
 function parseArgs(argv) {
   const args = {
@@ -91,6 +96,10 @@ function worseStatus(a, b) {
   return STATUS_RANK[b] > STATUS_RANK[a] ? b : a;
 }
 
+function worseStatusFromList(values) {
+  return values.reduce((worst, value) => worseStatus(worst, value), "normal");
+}
+
 function safeToStartAgent(windowKey, status) {
   if (status === "danger" || status === "exhausted") return false;
   if (windowKey === "7d" && status === "tight") return false;
@@ -112,20 +121,174 @@ function windowText(windowKey, status, remaining) {
   return `${label}额度剩余约 ${remaining}%`;
 }
 
-function evaluateToolWindow(tool, limitValue, windowKey) {
+function freshnessFor(asOf, windowKey) {
+  const asOfMs = Date.parse(asOf);
+  if (!Number.isFinite(asOfMs)) return "unknown";
+  const ageMs = Date.now() - asOfMs;
+  if (ageMs < -5 * 60 * 1000) return "unknown";
+  return ageMs > WINDOW_CONFIG[windowKey].staleMs ? "stale" : "fresh";
+}
+
+function sameReset(a, b) {
+  if (!a || !b) return true;
+  const ta = Date.parse(a);
+  const tb = Date.parse(b);
+  if (!Number.isFinite(ta) || !Number.isFinite(tb)) return true;
+  return Math.abs(ta - tb) <= 60 * 1000;
+}
+
+function pctRateFromSnapshots(data, tool, windowKey, resetAt, asOfMs, horizon) {
+  const sourceKey = WINDOW_CONFIG[windowKey].sourceKey;
+  const sinceMs = asOfMs - horizon.minutes * 60 * 1000;
+  const rows = (data?.limitSnapshots || [])
+    .filter((snapshot) => snapshot && snapshot.tool === tool)
+    .map((snapshot) => {
+      const ts = Date.parse(snapshot.timestamp);
+      const entry = snapshot[sourceKey];
+      const pct = entry ? clampPercent(entry.pct) : null;
+      if (!Number.isFinite(ts) || pct === null || !sameReset(entry && entry.resetAt, resetAt)) return null;
+      return { ts, pct };
+    })
+    .filter(Boolean)
+    .filter((row) => row.ts >= sinceMs && row.ts <= asOfMs)
+    .sort((a, b) => a.ts - b.ts);
+
+  if (rows.length < 2) return null;
+  const first = rows[0];
+  const last = rows[rows.length - 1];
+  const elapsedHours = (last.ts - first.ts) / (60 * 60 * 1000);
+  if (elapsedHours < 0.02) return null;
+  const deltaPct = last.pct - first.pct;
+  if (deltaPct < 0) return null;
+  return {
+    basis: horizon.key,
+    basis_cn: horizon.label,
+    pct_per_hour: Math.round((deltaPct / elapsedHours) * 100) / 100,
+    samples: rows.length,
+  };
+}
+
+function windowAverageRate(used, resetAt, asOfMs, windowKey) {
+  const resetMs = Date.parse(resetAt);
+  if (!Number.isFinite(resetMs)) return null;
+  const windowStart = resetMs - WINDOW_CONFIG[windowKey].hours * 60 * 60 * 1000;
+  const elapsedHours = Math.max(0.05, Math.min(WINDOW_CONFIG[windowKey].hours, (asOfMs - windowStart) / (60 * 60 * 1000)));
+  if (!Number.isFinite(elapsedHours) || elapsedHours <= 0) return null;
+  return {
+    basis: "window_avg",
+    basis_cn: "窗口平均",
+    pct_per_hour: Math.round((used / elapsedHours) * 100) / 100,
+    samples: null,
+  };
+}
+
+function tokenVelocity(data, tool) {
+  const windows = data?.usageVelocity?.windows || {};
+  const read = (key) => {
+    const row = windows[key]?.byTool?.[tool];
+    if (!row) return { tok_per_hour: 0, usd_per_hour: 0, model_call_count: 0 };
+    return {
+      tok_per_hour: Math.round(row.tokPerHour || 0),
+      usd_per_hour: Math.round((row.usdPerHour || 0) * 10000) / 10000,
+      model_call_count: row.modelCallCount || 0,
+    };
+  };
+  return {
+    "15m": read("15m"),
+    "60m": read("60m"),
+  };
+}
+
+function forecastFor(data, tool, windowKey, used, remaining, resetAt, asOf) {
+  const asOfMs = Date.parse(asOf);
+  const resetMs = Date.parse(resetAt);
+  if (!Number.isFinite(asOfMs) || !Number.isFinite(resetMs) || resetMs <= Date.now()) {
+    return {
+      basis: "insufficient",
+      basis_cn: "数据不足",
+      pct_per_hour: null,
+      eta_minutes: null,
+      eta_text: "限额数据不足",
+      will_exhaust_before_reset: false,
+      basis_options: [],
+      risk_reason: "缺少可用 reset 或快照时间",
+    };
+  }
+
+  const options = SNAPSHOT_HORIZONS
+    .map((horizon) => pctRateFromSnapshots(data, tool, windowKey, resetAt, asOfMs, horizon))
+    .filter(Boolean);
+  const avg = windowAverageRate(used, resetAt, asOfMs, windowKey);
+  if (avg) options.push(avg);
+  const chosen = options.reduce((best, option) => {
+    if (!best) return option;
+    return option.pct_per_hour > best.pct_per_hour ? option : best;
+  }, null);
+
+  if (!chosen || !chosen.pct_per_hour || chosen.pct_per_hour <= 0) {
+    return {
+      basis: chosen ? chosen.basis : "insufficient",
+      basis_cn: chosen ? chosen.basis_cn : "数据不足",
+      pct_per_hour: chosen ? chosen.pct_per_hour : null,
+      eta_minutes: null,
+      eta_text: "当前速度不足以预测耗尽",
+      will_exhaust_before_reset: false,
+      basis_options: options,
+      risk_reason: "最近速度接近 0 或样本不足",
+    };
+  }
+
+  const etaHours = remaining / chosen.pct_per_hour;
+  const etaMinutes = Math.round(etaHours * 60);
+  const willExhaust = Date.now() + etaHours * 60 * 60 * 1000 < resetMs;
+  return {
+    basis: chosen.basis,
+    basis_cn: chosen.basis_cn,
+    pct_per_hour: chosen.pct_per_hour,
+    eta_minutes: etaMinutes,
+    eta_text: willExhaust ? `约 ${etaMinutes} 分钟后耗尽` : "预计 reset 先发生",
+    will_exhaust_before_reset: willExhaust,
+    basis_options: options,
+    risk_reason: willExhaust ? `${chosen.basis_cn}速度显示会早于 reset 耗尽` : "按当前速度预计 reset 先发生",
+  };
+}
+
+function statusWithForecast(baseStatus, windowKey, forecast, freshness) {
+  let status = baseStatus;
+  if (freshness === "stale" && status === "normal") status = "tight";
+  if (forecast && forecast.will_exhaust_before_reset) {
+    const eta = forecast.eta_minutes;
+    if (windowKey === "5h" && eta !== null && eta <= 60) status = worseStatus(status, "danger");
+    else if (windowKey === "7d" && eta !== null && eta <= 24 * 60) status = worseStatus(status, "danger");
+    else status = worseStatus(status, "tight");
+  }
+  return status;
+}
+
+function evaluateToolWindow(data, tool, limitValue, windowKey) {
   const sourceKey = WINDOW_CONFIG[windowKey].sourceKey;
   const source = limitValue && typeof limitValue === "object" ? limitValue[sourceKey] : null;
   const used = source && typeof source === "object" ? clampPercent(source.pct) : null;
   const remaining = used === null ? null : Math.round((100 - used) * 10) / 10;
-  const status = statusForRemaining(remaining);
   const resetAt = toIso(source && source.resetAt);
+  const asOf = toIso(limitValue && limitValue.asOf) || toIso(data && data.updatedAt);
+  const freshness = freshnessFor(asOf, windowKey);
+  const forecast = used === null || remaining === null || !resetAt
+    ? forecastFor(null, tool, windowKey, 0, 0, null, asOf)
+    : forecastFor(data, tool, windowKey, used, remaining, resetAt, asOf);
+  const status = statusWithForecast(statusForRemaining(remaining), windowKey, forecast, freshness);
 
   return {
     tool,
     status,
+    used,
     remaining,
     resetAt,
     resumeAfter: resetAt ? addMinutes(resetAt, 5) : null,
+    asOf,
+    freshness,
+    forecast,
+    tokenVelocity: tokenVelocity(data, tool),
   };
 }
 
@@ -135,27 +298,42 @@ function chooseWorstTool(rows) {
     const rankDelta = STATUS_RANK[row.status] - STATUS_RANK[best.status];
     if (rankDelta > 0) return row;
     if (rankDelta < 0) return best;
+    if (row.forecast?.will_exhaust_before_reset && best.forecast?.will_exhaust_before_reset) {
+      const rowEta = row.forecast.eta_minutes ?? Number.POSITIVE_INFINITY;
+      const bestEta = best.forecast.eta_minutes ?? Number.POSITIVE_INFINITY;
+      return rowEta < bestEta ? row : best;
+    }
+    if (row.forecast?.will_exhaust_before_reset !== best.forecast?.will_exhaust_before_reset) {
+      return row.forecast?.will_exhaust_before_reset ? row : best;
+    }
     if (row.remaining === null) return best;
     if (best.remaining === null) return row;
     return row.remaining < best.remaining ? row : best;
   }, null);
 }
 
-function evaluateWindow(limits, windowKey) {
+function evaluateWindow(data, windowKey) {
+  const limits = data?.limits || {};
   const entries = Object.entries(limits || {});
   const rows = entries.length
-    ? entries.map(([tool, limitValue]) => evaluateToolWindow(tool, limitValue, windowKey))
-    : [evaluateToolWindow("unknown", null, windowKey)];
-  const worst = chooseWorstTool(rows) || evaluateToolWindow("unknown", null, windowKey);
+    ? entries.map(([tool, limitValue]) => evaluateToolWindow(data, tool, limitValue, windowKey))
+    : [evaluateToolWindow(data, "unknown", null, windowKey)];
+  const worst = chooseWorstTool(rows) || evaluateToolWindow(data, "unknown", null, windowKey);
   const status = worst.status;
 
   return {
     status,
     status_cn: STATUS_CN[status],
+    tool: worst.tool,
+    used_percent: worst.used,
     remaining_percent: worst.remaining,
     remaining_text: windowText(windowKey, status, worst.remaining),
     reset_at: worst.resetAt,
     resume_after: worst.resumeAfter,
+    as_of: worst.asOf,
+    data_freshness: worst.freshness,
+    forecast: worst.forecast,
+    token_velocity: worst.tokenVelocity,
     safe_to_start_agent: safeToStartAgent(windowKey, status),
     safe_to_start_heavy_task: safeToStartHeavyTask(status),
     should_pause_running_agents: shouldPauseWindow(windowKey, status),
@@ -172,6 +350,8 @@ function policyForOverall(status, windows) {
 
 function messageFor(status, windows) {
   if (status === "exhausted") return "额度接近耗尽，全部等待额度恢复，只允许 checkpoint 和 handoff";
+  if (windows["5h"].forecast?.will_exhaust_before_reset) return "5小时额度按当前速度会早于 reset 耗尽，暂停新任务，只允许 checkpoint 和 handoff";
+  if (windows["7d"].forecast?.will_exhaust_before_reset) return "7天额度按当前速度会早于 reset 耗尽，停止新并发和大任务";
   if (windows["5h"].status === "danger") return "5小时额度危险，暂停新任务，只允许 checkpoint 和 handoff";
   if (windows["7d"].status === "danger") return "7天额度危险，停止新并发和大任务，只允许 checkpoint";
   if (windows["7d"].status === "tight") return "7天额度偏紧，不启动新并发 Agent，减少低优先级任务";
@@ -211,9 +391,10 @@ function shouldResumePausedAgents(windows) {
 }
 
 function unknownQuota(updatedAt = isoNow()) {
+  const data = { updatedAt, limits: {}, limitSnapshots: [], usageVelocity: null };
   const windows = {
-    "5h": evaluateWindow({}, "5h"),
-    "7d": evaluateWindow({}, "7d"),
+    "5h": evaluateWindow(data, "5h"),
+    "7d": evaluateWindow(data, "7d"),
   };
   const overallStatus = "unknown";
   return {
@@ -221,7 +402,7 @@ function unknownQuota(updatedAt = isoNow()) {
     overall_status_cn: STATUS_CN[overallStatus],
     policy: policyForOverall(overallStatus, windows),
     windows,
-    safe_to_start_agent: true,
+    safe_to_start_agent: false,
     safe_to_start_heavy_task: false,
     should_pause_running_agents: false,
     should_resume_paused_agents: false,
@@ -239,10 +420,10 @@ function quotaFromUsage(data) {
   }
 
   const windows = {
-    "5h": evaluateWindow(data.limits, "5h"),
-    "7d": evaluateWindow(data.limits, "7d"),
+    "5h": evaluateWindow(data, "5h"),
+    "7d": evaluateWindow(data, "7d"),
   };
-  const overallStatus = worseStatus(windows["5h"].status, windows["7d"].status);
+  const overallStatus = worseStatusFromList([windows["5h"].status, windows["7d"].status]);
   const shouldPause = windows["5h"].should_pause_running_agents
     || windows["7d"].status === "exhausted"
     || windows["5h"].status === "exhausted";

@@ -114,6 +114,16 @@ API 必须：
 - `windows.*.safe_to_start_agent`: 单窗口是否允许启动新 Agent
 - `windows.*.safe_to_start_heavy_task`: 单窗口是否允许长任务 / 高消耗任务
 - `windows.*.should_pause_running_agents`: 单窗口是否建议暂停运行中 Agent
+- `windows.*.forecast`: v0.5 新增，额度速度预测结果。
+- `windows.*.forecast.basis`: `15m`, `60m`, `window_avg`, `insufficient`。
+- `windows.*.forecast.basis_cn`: 给人看的预测口径。
+- `windows.*.forecast.pct_per_hour`: 当前采用口径下的限额百分比速度。
+- `windows.*.forecast.eta_minutes`: 预计耗尽分钟数，不可判断为 `null`。
+- `windows.*.forecast.eta_text`: 给人看的 ETA 文案。
+- `windows.*.forecast.will_exhaust_before_reset`: 是否预计早于 reset 耗尽。
+- `windows.*.forecast.risk_reason`: 当前判断原因。
+- `windows.*.token_velocity`: 最近 15m / 60m token/hour 辅助速度，不代表绝对剩余 token。
+- `windows.*.data_freshness`: `fresh`, `stale`, `unknown`。
 - `safe_to_start_agent`: 是否允许启动新 Agent
 - `safe_to_start_heavy_task`: 是否允许长任务 / 高消耗任务
 - `should_pause_running_agents`: 是否要求运行中 Agent 写 handoff 并进入暂停队列
@@ -142,6 +152,15 @@ API 必须：
 | `<= 5` | `exhausted` | `耗尽` | `只允许checkpoint` | `false` | `false` | `额度接近耗尽，不启动新任务` |
 
 如果数据源读取失败、JSON 解析失败、无 `limits` 或限额字段不可判断，则返回 `unknown`。
+
+## v0.5 速度预测规则
+
+1. 优先使用 `limitSnapshots` 中同一工具、同一窗口、同一 reset 周期的最近 15 分钟百分比差值计算 `%/h`。
+2. 其次使用最近 60 分钟百分比差值。
+3. 如果短窗口样本不足，使用 `limits[tool][window].pct + resetAt` 推导窗口平均速度。
+4. 取 `%/h` 最大的口径作为最保守 ETA basis。
+5. `usageVelocity` 的 token/hour 只用于解释最近是否爆量，不换算成绝对剩余 token。
+6. 快照明显陈旧时，`data_freshness = stale`，不允许误报完全安全的 heavy task。
 
 ## 策略合成规则
 

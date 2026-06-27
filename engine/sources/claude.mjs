@@ -144,6 +144,7 @@ export function collect() {
   const projects = {};
   const sessions = [];
   const agentDaily = {};
+  const usageEvents = [];
 
   function walk(dir) {
     let entries;
@@ -226,12 +227,27 @@ export function collect() {
 
       const callUsage = { inp, out, cw1h, cw5m, cr };
       const callUsd = usdBreakdownOf(mid, callUsage);
+      const callBreak = tokBreakdownOf(callUsage);
       const curSession = ensureSession(project, o.timestamp);
       curSession.modelCallCount += 1;
       curSession.models.add(mid);
-      addBreakdown(curSession.tokBreakdown, tokBreakdownOf(callUsage));
+      addBreakdown(curSession.tokBreakdown, callBreak);
       addBreakdown(curSession.usdBreakdown, callUsd);
       noteAgentDay(agentDaily, day, 1, null);
+      usageEvents.push({
+        timestamp: new Date(Date.parse(o.timestamp)).toISOString(),
+        project,
+        model: mid,
+        tok: tokOf(callUsage),
+        usd: round4(callUsd.input + callUsd.output + callUsd.cacheWrite + callUsd.cacheRead),
+        tokBreakdown: callBreak,
+        usdBreakdown: {
+          input: round4(callUsd.input),
+          output: round4(callUsd.output),
+          cacheWrite: round4(callUsd.cacheWrite),
+          cacheRead: round4(callUsd.cacheRead),
+        },
+      });
 
       (agg[day] || (agg[day] = {}));
       (agg[day][project.id] || (agg[day][project.id] = {}));
@@ -273,6 +289,10 @@ export function collect() {
 
   const pricing = {};
   for (const m of models) pricing[m] = pricingOf(m);
+  const limits = readClaudeMeterLimits();
+  const limitSnapshots = limits && limits.asOf
+    ? [{ timestamp: limits.asOf, fiveHour: limits.fiveHour, sevenDay: limits.sevenDay }]
+    : [];
 
   return {
     tool: TOOL,
@@ -280,9 +300,11 @@ export function collect() {
     models: [...models],
     unpriced: [...unpriced],
     pricing,
-    limits: readClaudeMeterLimits(), // 没装 ClaudeMeter → null
+    limits, // 没装 ClaudeMeter → null
     source: LOG_ROOT,
     sessions,
     agentDaily,
+    usageEvents,
+    limitSnapshots,
   };
 }
