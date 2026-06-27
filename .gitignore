@@ -1,6 +1,9 @@
 # 引擎产出 / 个人数据(含真实用量:token、花费、限额%,勿公开)
 usage.json
 
+# 本地多 Agent 协作记录,勿公开
+.agent-team/
+
 # 依赖(打包阶段可能引入)
 node_modules/
 

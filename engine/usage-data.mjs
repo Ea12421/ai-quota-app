@@ -42,15 +42,66 @@ function compute() {
   const modelTool = {}; // model -> tool
   const pricing = {}; // model -> 单价表
   const agg = {}; // date -> model -> {tok, usd, tool, tokBreakdown, usdBreakdown}
+  const projectAgg = {}; // date -> project -> model -> {tok, usd, tool, tokBreakdown, usdBreakdown}
+  const projectInfo = {}; // projectId -> {id,name,path}
+  const projectTotal = {}; // projectId -> {tok,usd,tools:Set}
+  const projectLastActive = {}; // projectId -> YYYY-MM-DD
+  const sessions = [];
+  const agentDaily = {}; // date -> tool -> {modelCallCount,userTurnCount}
   let minDay = null;
   let maxDay = null;
   const today = todayKeyUTC8(); // 未来日期/时钟偏移的记录夹到今天:避免生成几百万空天(OOM)且区间锚定错乱
   const floor = new Date(Date.parse(today + "T00:00:00Z") - 1100 * 86400000).toISOString().slice(0, 10); // 远古坏时间戳夹到 ~3 年前,同样防 OOM
 
   const zeroBreak = () => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
+  const unknownProject = { id: "unknown", name: "未知项目", path: null };
+  function addUsage(cur, e, tool) {
+    cur.tok += e.tok;
+    cur.usd += e.usd;
+    cur.tool = tool;
+    for (const k of ["input", "output", "cacheWrite", "cacheRead"]) {
+      cur.tokBreakdown[k] += (e.tokBreakdown && e.tokBreakdown[k]) || 0;
+      cur.usdBreakdown[k] += (e.usdBreakdown && e.usdBreakdown[k]) || 0;
+    }
+  }
+  function materialize(c) {
+    return {
+      tok: c.tok,
+      usd: round4(c.usd),
+      tool: c.tool,
+      tokBreakdown: c.tokBreakdown,
+      usdBreakdown: {
+        input: round4(c.usdBreakdown.input),
+        output: round4(c.usdBreakdown.output),
+        cacheWrite: round4(c.usdBreakdown.cacheWrite),
+        cacheRead: round4(c.usdBreakdown.cacheRead),
+      },
+    };
+  }
+  function addAgentStats(date, tool, stats) {
+    if (!date || !tool || !stats) return;
+    (agentDaily[date] || (agentDaily[date] = {}));
+    const cur = agentDaily[date][tool] || (agentDaily[date][tool] = { modelCallCount: 0, userTurnCount: null });
+    cur.modelCallCount += stats.modelCallCount || 0;
+    if (typeof stats.userTurnCount === "number") cur.userTurnCount = (cur.userTurnCount || 0) + stats.userTurnCount;
+  }
+  function materializeAgentStats(rows) {
+    const out = {};
+    for (const [tool, s] of Object.entries(rows || {})) {
+      const userTurnCount = s.userTurnCount && s.userTurnCount > 0 ? s.userTurnCount : null;
+      out[tool] = {
+        modelCallCount: s.modelCallCount || 0,
+        userTurnCount,
+        amplification: userTurnCount ? round4((s.modelCallCount || 0) / userTurnCount) : null,
+      };
+    }
+    return out;
+  }
 
   for (const r of results) {
     Object.assign(pricing, r.pricing || {});
+    if (Array.isArray(r.sessions)) sessions.push(...r.sessions);
+    for (const [date, stats] of Object.entries(r.agentDaily || {})) addAgentStats(date, r.tool, stats);
     for (const e of r.entries) {
       modelTool[e.model] = r.tool;
       const date = e.date > today ? today : e.date < floor ? floor : e.date; // 夹到 [floor, today],防未来/远古坏时间戳生成海量空天(OOM)
@@ -60,12 +111,22 @@ function compute() {
       const cur =
         agg[date][e.model] ||
         (agg[date][e.model] = { tok: 0, usd: 0, tool: r.tool, tokBreakdown: zeroBreak(), usdBreakdown: zeroBreak() });
-      cur.tok += e.tok;
-      cur.usd += e.usd;
-      for (const k of ["input", "output", "cacheWrite", "cacheRead"]) {
-        cur.tokBreakdown[k] += (e.tokBreakdown && e.tokBreakdown[k]) || 0;
-        cur.usdBreakdown[k] += (e.usdBreakdown && e.usdBreakdown[k]) || 0;
-      }
+      addUsage(cur, e, r.tool);
+
+      const p = e.project && e.project.id ? e.project : unknownProject;
+      projectInfo[p.id] = p;
+      (projectAgg[date] || (projectAgg[date] = {}));
+      (projectAgg[date][p.id] || (projectAgg[date][p.id] = {}));
+      const pcur =
+        projectAgg[date][p.id][e.model] ||
+        (projectAgg[date][p.id][e.model] = { tok: 0, usd: 0, tool: r.tool, tokBreakdown: zeroBreak(), usdBreakdown: zeroBreak() });
+      addUsage(pcur, e, r.tool);
+
+      const pt = projectTotal[p.id] || (projectTotal[p.id] = { tok: 0, usd: 0, tools: new Set() });
+      pt.tok += e.tok;
+      pt.usd += e.usd;
+      pt.tools.add(r.tool);
+      if ((e.tok || 0) > 0 || (e.usd || 0) > 0) projectLastActive[p.id] = !projectLastActive[p.id] || date > projectLastActive[p.id] ? date : projectLastActive[p.id];
     }
   }
 
@@ -79,6 +140,16 @@ function compute() {
   // 工具列表(按 SOURCES 顺序,只列有数据的)
   const present = new Set(Object.values(modelTool));
   const tools = SOURCES.map((s) => s.TOOL).filter((t) => present.has(t));
+  const toolOrder = Object.fromEntries(SOURCES.map((s, i) => [s.TOOL, i]));
+  const projects = Object.keys(projectTotal)
+    .sort((a, b) => projectTotal[b].tok - projectTotal[a].tok)
+    .map((id) => ({
+      ...(projectInfo[id] || unknownProject),
+      tok: projectTotal[id].tok,
+      usd: round4(projectTotal[id].usd),
+      tools: [...projectTotal[id].tools].sort((a, b) => (toolOrder[a] ?? 99) - (toolOrder[b] ?? 99)),
+      lastActiveDate: projectLastActive[id] || null,
+    }));
 
   // 连续补齐:最早有用量的天 → 今天(UTC+8),每天补齐所有模型键(零填),带 tool 标签
   const daily = [];
@@ -87,34 +158,42 @@ function compute() {
     const lastDay = today;
     for (const date of eachDay(minDay, lastDay)) {
       const dayAgg = agg[date] || {};
+      const dayProjectAgg = projectAgg[date] || {};
       const byModel = {};
       for (const m of sortedModels) {
         const c = dayAgg[m];
-        byModel[m] = c
-          ? {
-              tok: c.tok,
-              usd: round4(c.usd),
-              tool: modelTool[m],
-              tokBreakdown: c.tokBreakdown,
-              usdBreakdown: {
-                input: round4(c.usdBreakdown.input),
-                output: round4(c.usdBreakdown.output),
-                cacheWrite: round4(c.usdBreakdown.cacheWrite),
-                cacheRead: round4(c.usdBreakdown.cacheRead),
-              },
-            }
-          : { tok: 0, usd: 0, tool: modelTool[m], tokBreakdown: zeroBreak(), usdBreakdown: zeroBreak() };
+        byModel[m] = c ? materialize(c) : { tok: 0, usd: 0, tool: modelTool[m], tokBreakdown: zeroBreak(), usdBreakdown: zeroBreak() };
       }
-      daily.push({ date, byModel });
+      const byProject = {};
+      for (const [projectId, modelMap] of Object.entries(dayProjectAgg)) {
+        const pByModel = {};
+        let pTok = 0;
+        let pUsd = 0;
+        for (const m of sortedModels) {
+          const c = modelMap[m];
+          if (!c) continue;
+          pByModel[m] = materialize(c);
+          pTok += c.tok;
+          pUsd += c.usd;
+        }
+        byProject[projectId] = { tok: pTok, usd: round4(pUsd), byModel: pByModel };
+      }
+      daily.push({ date, byModel, byProject, agentStats: materializeAgentStats(agentDaily[date]) });
     }
   }
+
+  const sortedSessions = sessions
+    .filter((s) => s && s.id && s.tool)
+    .sort((a, b) => Date.parse(b.endedAt || b.startedAt || 0) - Date.parse(a.endedAt || a.startedAt || 0));
 
   return {
     updatedAt: new Date().toISOString(),
     limits,
     daily,
+    sessions: sortedSessions,
     tools,
     models: sortedModels,
+    projects,
     pricing,
     notice: NOTICE,
     _meta: {

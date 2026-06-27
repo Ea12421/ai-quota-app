@@ -73,20 +73,84 @@ final class EngineProcess {
         return nil
     }
 
-    // 项目根:从 .app 位置上溯 <root>/app/build/X.app;校验 engine 存在,否则退回硬编码本机路径。
+    // 项目根:从 .app 位置上溯 <root>/app/build/X.app;也支持调试时用环境变量指定。
     static func resolveProjectRoot() -> URL? {
         let fm = FileManager.default
-        let derived = Bundle.main.bundleURL
-            .deletingLastPathComponent()   // build
-            .deletingLastPathComponent()   // app
-            .deletingLastPathComponent()   // <root>
-        if fm.fileExists(atPath: derived.appendingPathComponent("engine/usage-data.mjs").path) {
-            return derived
+        var candidates: [URL] = []
+        if let envRoot = ProcessInfo.processInfo.environment["AI_QUOTA_APP_ROOT"], !envRoot.isEmpty {
+            candidates.append(URL(fileURLWithPath: envRoot))
         }
-        let hard = URL(fileURLWithPath: "/Users/m4air/ai额度app")
-        if fm.fileExists(atPath: hard.appendingPathComponent("engine/usage-data.mjs").path) {
-            return hard
+        candidates.append(
+            Bundle.main.bundleURL
+                .deletingLastPathComponent()   // build
+                .deletingLastPathComponent()   // app
+                .deletingLastPathComponent()   // <root>
+        )
+        for root in candidates where fm.fileExists(atPath: root.appendingPathComponent("engine/usage-data.mjs").path) {
+            return root
         }
         return nil
+    }
+}
+
+final class QuotaAPIProcess {
+    private let port: Int
+    private var process: Process?
+
+    init(port: Int) { self.port = port }
+
+    func ensureRunning(completion: @escaping (Bool) -> Void) {
+        healthCheck { [weak self] alive in
+            guard let self = self else { completion(false); return }
+            if alive { completion(true); return }
+            self.spawn()
+            self.waitUntilUp(retries: 20, completion: completion)
+        }
+    }
+
+    func stop() {
+        process?.terminate()
+        process = nil
+    }
+
+    private func healthCheck(_ cb: @escaping (Bool) -> Void) {
+        guard let url = URL(string: "http://127.0.0.1:\(port)/health") else { cb(false); return }
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 1.5
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            guard (resp as? HTTPURLResponse)?.statusCode == 200, let data = data,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  obj["service"] as? String == "quota-app",
+                  (obj["ok"] as? Bool) == true else { cb(false); return }
+            cb(true)
+        }.resume()
+    }
+
+    private func spawn() {
+        guard let node = EngineProcess.resolveNode(), let root = EngineProcess.resolveProjectRoot() else {
+            NSLog("UsageBar: 找不到 node 或项目目录,quota API 未启动")
+            return
+        }
+        let script = root.appendingPathComponent("engine/quota-api.mjs")
+        let p = Process()
+        p.executableURL = node
+        p.arguments = [script.path, "--port", String(port)]
+        p.currentDirectoryURL = root
+        p.standardOutput = FileHandle.nullDevice
+        p.standardError = FileHandle.nullDevice
+        do {
+            try p.run()
+            DispatchQueue.main.async { self.process = p }
+        } catch { NSLog("UsageBar: quota API 启动失败 \(error)") }
+    }
+
+    private func waitUntilUp(retries: Int, completion: @escaping (Bool) -> Void) {
+        healthCheck { [weak self] alive in
+            if alive { completion(true); return }
+            if retries <= 0 { completion(false); return }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) {
+                self?.waitUntilUp(retries: retries - 1, completion: completion)
+            }
+        }
     }
 }

@@ -1,11 +1,13 @@
 import AppKit
 
 let kPort = 7799
+let kQuotaPort = 8765
 
 // 装配各部件:引擎子进程 → 数据轮询 → 菜单栏胶囊 / 弹窗 / 完整窗口。
 // 数据/界面解耦延续到这里:本壳只起引擎 + 消费它产的 JSON,绝不碰原始日志。
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let engine = EngineProcess(port: kPort)
+    private let quotaAPI = QuotaAPIProcess(port: kQuotaPort)
     private let store = UsageStore(port: kPort)
     private var pill: StatusPill!
     private var popover: PopoverController!
@@ -26,6 +28,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         store.onUpdate = { [weak self] snap in self?.pill.update(with: snap) }
 
+        quotaAPI.ensureRunning { ok in
+            if !ok { NSLog("UsageBar: quota API 未就绪,Atmo 可用性将降级为手动启动") }
+        }
+
         // 已有引擎在跑就复用,否则拉起;就绪后开始轮询喂胶囊 + 预加载弹窗(消除点开白屏)。
         engine.ensureRunning { [weak self] _ in
             DispatchQueue.main.async {
@@ -36,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        quotaAPI.stop()
         engine.stop()
     }
 

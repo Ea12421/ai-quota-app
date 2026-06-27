@@ -13,8 +13,9 @@
 // 隐私:绝不读取/打印对话正文。
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dayKeyUTC8, round4 } from "../lib.mjs";
+import { dayKeyUTC8, projectOf, round4 } from "../lib.mjs";
 
 export const TOOL = "codex";
 
@@ -58,11 +59,71 @@ function mapRateLimits(rl) {
   return { fiveHour: five, sevenDay: seven };
 }
 
+function safeSessionId(file) {
+  return `${TOOL}-${crypto.createHash("sha1").update(file).digest("hex").slice(0, 12)}`;
+}
+
+function zeroBreakdown() {
+  return { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+}
+
+function addBreakdown(target, src) {
+  target.input += src.input || 0;
+  target.output += src.output || 0;
+  target.cacheWrite += src.cacheWrite || 0;
+  target.cacheRead += src.cacheRead || 0;
+}
+
+function noteTime(session, timestamp) {
+  const t = Date.parse(timestamp);
+  if (!Number.isFinite(t)) return;
+  const iso = new Date(t).toISOString();
+  if (!session.startedAt || iso < session.startedAt) session.startedAt = iso;
+  if (!session.endedAt || iso > session.endedAt) session.endedAt = iso;
+}
+
+function noteAgentDay(agentDaily, day, modelCalls, userTurns) {
+  if (!day) return;
+  const row = agentDaily[day] || (agentDaily[day] = { modelCallCount: 0, userTurnCount: 0 });
+  row.modelCallCount += modelCalls || 0;
+  row.userTurnCount += userTurns || 0;
+}
+
+function materializeSession(s) {
+  const totalTok = s.tokBreakdown.input + s.tokBreakdown.output + s.tokBreakdown.cacheWrite + s.tokBreakdown.cacheRead;
+  const totalUsd = s.usdBreakdown.input + s.usdBreakdown.output + s.usdBreakdown.cacheWrite + s.usdBreakdown.cacheRead;
+  const userTurnCount = s.userTurnCount > 0 ? s.userTurnCount : null;
+  return {
+    id: s.id,
+    tool: TOOL,
+    projectId: s.project.id,
+    projectName: s.project.name,
+    startedAt: s.startedAt,
+    endedAt: s.endedAt,
+    modelCallCount: s.modelCallCount,
+    userTurnCount,
+    amplification: userTurnCount ? round4(s.modelCallCount / userTurnCount) : null,
+    tok: totalTok,
+    usd: round4(totalUsd),
+    tokBreakdown: s.tokBreakdown,
+    usdBreakdown: {
+      input: round4(s.usdBreakdown.input),
+      output: round4(s.usdBreakdown.output),
+      cacheWrite: round4(s.usdBreakdown.cacheWrite),
+      cacheRead: round4(s.usdBreakdown.cacheRead),
+    },
+    models: [...s.models].sort(),
+  };
+}
+
 export function collect() {
   const prices = loadPrices();
-  const agg = {}; // day -> model -> {input, cached, output}
+  const agg = {}; // day -> project -> model -> {input, cached, output}
   const models = new Set();
   const unpriced = new Set();
+  const projects = {};
+  const sessions = [];
+  const agentDaily = {};
   let filesWithTok = 0;
   let filesSkipped = 0;
   let latestRL = null; // 最新一条 rate_limits 快照(Codex 自带的 5h/7d 额度)
@@ -100,9 +161,21 @@ export function collect() {
       return;
     }
     let curModel = null;
+    let curProject = projectOf(null);
     let prevTotal = null;
     let prevTotalKey = null;
     let hadTok = false;
+    const session = {
+      id: safeSessionId(file),
+      project: curProject,
+      startedAt: null,
+      endedAt: null,
+      modelCallCount: 0,
+      userTurnCount: 0,
+      tokBreakdown: zeroBreakdown(),
+      usdBreakdown: zeroBreakdown(),
+      models: new Set(),
+    };
     for (const line of lines) {
       if (!line) continue;
       let o;
@@ -111,8 +184,22 @@ export function collect() {
       } catch {
         continue;
       }
-      if (o.type === "turn_context" && o.payload && o.payload.model) {
-        curModel = o.payload.model;
+      if (o.type === "session_meta" && o.payload && o.payload.cwd) {
+        curProject = projectOf(o.payload.cwd);
+        projects[curProject.id] = curProject;
+        continue;
+      }
+      if (o.type === "turn_context" && o.payload) {
+        if (o.payload.model) curModel = o.payload.model;
+        if (o.payload.cwd) {
+          curProject = projectOf(o.payload.cwd);
+          projects[curProject.id] = curProject;
+        }
+        const turnDay = dayKeyUTC8(o.timestamp);
+        noteAgentDay(agentDaily, turnDay, 0, 1);
+        session.userTurnCount += 1;
+        session.project = session.project.id === "unknown" && curProject.id !== "unknown" ? curProject : session.project;
+        noteTime(session, o.timestamp);
         continue;
       }
       if (o.type === "event_msg" && o.payload && o.payload.type === "token_count") {
@@ -158,10 +245,21 @@ export function collect() {
 
         models.add(model);
         if (!priceForModel(model)) unpriced.add(model);
+        projects[curProject.id] = curProject;
         hadTok = true;
+        session.project = session.project.id === "unknown" && curProject.id !== "unknown" ? curProject : session.project;
+        session.modelCallCount += 1;
+        session.models.add(model);
+        noteTime(session, o.timestamp);
+        noteAgentDay(agentDaily, day, 1, 0);
+        const callBreak = { input: Math.max(0, input - cached), output, cacheWrite: 0, cacheRead: cached };
+        const callUsd = usdBreakdownOf(model, { input, cached, output });
+        addBreakdown(session.tokBreakdown, callBreak);
+        addBreakdown(session.usdBreakdown, callUsd);
 
         (agg[day] || (agg[day] = {}));
-        const slot = agg[day][model] || (agg[day][model] = { input: 0, cached: 0, output: 0 });
+        (agg[day][curProject.id] || (agg[day][curProject.id] = {}));
+        const slot = agg[day][curProject.id][model] || (agg[day][curProject.id][model] = { input: 0, cached: 0, output: 0 });
         slot.input += input;
         slot.cached += cached;
         slot.output += output;
@@ -169,6 +267,7 @@ export function collect() {
     }
     if (hadTok) filesWithTok += 1;
     else filesSkipped += 1;
+    if (session.modelCallCount > 0) sessions.push(materializeSession(session));
   }
 
   for (const home of codexHomes()) {
@@ -195,22 +294,25 @@ export function collect() {
 
   const entries = [];
   for (const date of Object.keys(agg)) {
-    for (const [model, s] of Object.entries(agg[date])) {
-      const fresh = Math.max(0, s.input - s.cached);
-      const ub = usdBreakdownOf(model, s);
-      entries.push({
-        date,
-        model,
-        tok: s.input + s.output, // = fresh + cached + output
-        usd: round4(ub.input + ub.output + ub.cacheRead),
-        tokBreakdown: { input: fresh, output: s.output, cacheWrite: 0, cacheRead: s.cached },
-        usdBreakdown: {
-          input: round4(ub.input),
-          output: round4(ub.output),
-          cacheWrite: 0,
-          cacheRead: round4(ub.cacheRead),
-        },
-      });
+    for (const [projectId, byModel] of Object.entries(agg[date])) {
+      for (const [model, s] of Object.entries(byModel)) {
+        const fresh = Math.max(0, s.input - s.cached);
+        const ub = usdBreakdownOf(model, s);
+        entries.push({
+          date,
+          project: projects[projectId] || projectOf(null),
+          model,
+          tok: s.input + s.output, // = fresh + cached + output
+          usd: ub.input + ub.output + ub.cacheRead,
+          tokBreakdown: { input: fresh, output: s.output, cacheWrite: 0, cacheRead: s.cached },
+          usdBreakdown: {
+            input: ub.input,
+            output: ub.output,
+            cacheWrite: 0,
+            cacheRead: ub.cacheRead,
+          },
+        });
+      }
     }
   }
 
@@ -235,5 +337,7 @@ export function collect() {
     limits,
     source: roots.join(", ") || codexHomes().join(", ") + " (无 sessions 目录)",
     stats: { filesWithTok, filesSkipped },
+    sessions,
+    agentDaily,
   };
 }

@@ -3,7 +3,7 @@
 **日期**:2026-06-25
 **前一阶段**:数据引擎(Claude Code + Codex 双源)+ 浏览器 UI + 双源限额
 **下一阶段**:打包成常驻 macOS 菜单栏 App
-**项目目录**:`/Users/m4air/ai额度app`
+**项目目录**:`<项目目录>`
 **git**:❌ 非 git 仓库(改动都直接在磁盘上,没有 commit 概念)
 **怎么跑**:`node engine/usage-data.mjs --serve` → 浏览器开 `http://localhost:7799`(`.claude/launch.json` 已配 preview server)
 
@@ -107,7 +107,7 @@
 
 ### 入口 prompt(新窗口开场粘这个)
 ```
-我接手「AI 用量看板」项目(/Users/m4air/ai额度app),从「菜单栏打包」阶段开始。
+我接手「AI 用量看板」项目(`<项目目录>`),从「菜单栏打包」阶段开始。
 请先读 HANDOFF_数据层完成_TO_菜单栏打包.md 和你的 memory(claude-usage-dashboard / claudemeter-tool),
 然后告诉我:你理解的当前状态、打包技术栈的推荐(及理由)、需要我确认的事。
 先别写代码,plan-first。
@@ -138,6 +138,6 @@
 
 - **活日志漂移**:`~/.claude/projects` 是活的,当前会话在写,两次扫描 token 总量会有微小差异 —— 正常,别当 bug。
 - **隐私铁律**:两源都**只读记账字段,绝不读 `message.content` / 对话正文**。新增任何解析都要守住这条(已 grep 验证过)。
-- **审批过的 plan 文件**:`~/.claude/plans/wiggly-forging-turtle.md`(范围 B 的原始计划)。
+- **审批过的 plan 文件**:`<Claude 本地计划文件>`(范围 B 的原始计划)。
 - **memory 已写**:`claude-usage-dashboard`(项目进度 + 口径坑)、`claudemeter-tool`(ClaudeMeter 仓库/字段)。新窗口开场会自动加载 MEMORY.md。
-- **设计交接包原件**:`/Users/m4air/Downloads/Claude Code 用量看板.zip`;解出的设计源(含全部 CSS token + 图表逻辑)当时在 `/tmp/dc_template.html`(临时,需要时重新解)。
+- **设计交接包原件**:`<本地下载目录>/Claude Code 用量看板.zip`;解出的设计源(含全部 CSS token + 图表逻辑)当时在 `/tmp/dc_template.html`(临时,需要时重新解)。

@@ -3,7 +3,8 @@
 // 隐私:绝不读取/打印对话正文(message.content)。
 import fs from "node:fs";
 import path from "node:path";
-import { dayKeyUTC8, round4 } from "../lib.mjs";
+import crypto from "node:crypto";
+import { dayKeyUTC8, projectOf, round4 } from "../lib.mjs";
 
 export const TOOL = "claude-code";
 
@@ -80,11 +81,69 @@ function pricingOf(model) {
   return { tool: TOOL, input: pin, output: p[1], cacheWrite1h: round4(pin * 2), cacheWrite5m: round4(pin * 1.25), cacheRead: round4(pin * 0.1), estimated: false };
 }
 
+function safeSessionId(file) {
+  return `${TOOL}-${crypto.createHash("sha1").update(file).digest("hex").slice(0, 12)}`;
+}
+
+function zeroBreakdown() {
+  return { input: 0, output: 0, cacheWrite: 0, cacheRead: 0 };
+}
+
+function addBreakdown(target, src) {
+  target.input += src.input || 0;
+  target.output += src.output || 0;
+  target.cacheWrite += src.cacheWrite || 0;
+  target.cacheRead += src.cacheRead || 0;
+}
+
+function noteTime(session, timestamp) {
+  const t = Date.parse(timestamp);
+  if (!Number.isFinite(t)) return;
+  const iso = new Date(t).toISOString();
+  if (!session.startedAt || iso < session.startedAt) session.startedAt = iso;
+  if (!session.endedAt || iso > session.endedAt) session.endedAt = iso;
+}
+
+function noteAgentDay(agentDaily, day, modelCalls, userTurns) {
+  const row = agentDaily[day] || (agentDaily[day] = { modelCallCount: 0, userTurnCount: null });
+  row.modelCallCount += modelCalls || 0;
+  if (typeof userTurns === "number") row.userTurnCount = (row.userTurnCount || 0) + userTurns;
+}
+
+function materializeSession(s) {
+  const totalTok = s.tokBreakdown.input + s.tokBreakdown.output + s.tokBreakdown.cacheWrite + s.tokBreakdown.cacheRead;
+  const totalUsd = s.usdBreakdown.input + s.usdBreakdown.output + s.usdBreakdown.cacheWrite + s.usdBreakdown.cacheRead;
+  return {
+    id: s.id,
+    tool: TOOL,
+    projectId: s.project.id,
+    projectName: s.project.name,
+    startedAt: s.startedAt,
+    endedAt: s.endedAt,
+    modelCallCount: s.modelCallCount,
+    userTurnCount: null,
+    amplification: null,
+    tok: totalTok,
+    usd: round4(totalUsd),
+    tokBreakdown: s.tokBreakdown,
+    usdBreakdown: {
+      input: round4(s.usdBreakdown.input),
+      output: round4(s.usdBreakdown.output),
+      cacheWrite: round4(s.usdBreakdown.cacheWrite),
+      cacheRead: round4(s.usdBreakdown.cacheRead),
+    },
+    models: [...s.models].sort(),
+  };
+}
+
 export function collect() {
   const seen = new Set();
-  const agg = {}; // day -> model -> {inp,out,cw1h,cw5m,cr,n}
+  const agg = {}; // day -> project -> model -> {inp,out,cw1h,cw5m,cr,n}
   const models = new Set();
   const unpriced = new Set();
+  const projects = {};
+  const sessions = [];
+  const agentDaily = {};
 
   function walk(dir) {
     let entries;
@@ -107,6 +166,25 @@ export function collect() {
     } catch {
       return;
     }
+    let session = null;
+    function ensureSession(project, timestamp) {
+      if (!session) {
+        session = {
+          id: safeSessionId(file),
+          project,
+          startedAt: null,
+          endedAt: null,
+          modelCallCount: 0,
+          tokBreakdown: zeroBreakdown(),
+          usdBreakdown: zeroBreakdown(),
+          models: new Set(),
+        };
+      }
+      if (session.project.id === "unknown" && project.id !== "unknown") session.project = project;
+      noteTime(session, timestamp);
+      return session;
+    }
+
     for (const line of text.split("\n")) {
       if (!line.includes('"usage"')) continue;
       let o;
@@ -127,6 +205,8 @@ export function collect() {
 
       const day = dayKeyUTC8(o.timestamp);
       if (!day) continue;
+      const project = projectOf(o.cwd);
+      projects[project.id] = project;
 
       const inp = u.input_tokens || 0;
       const out = u.output_tokens || 0;
@@ -144,8 +224,18 @@ export function collect() {
       models.add(mid);
       if (!priceFor(mid)) unpriced.add(mid);
 
+      const callUsage = { inp, out, cw1h, cw5m, cr };
+      const callUsd = usdBreakdownOf(mid, callUsage);
+      const curSession = ensureSession(project, o.timestamp);
+      curSession.modelCallCount += 1;
+      curSession.models.add(mid);
+      addBreakdown(curSession.tokBreakdown, tokBreakdownOf(callUsage));
+      addBreakdown(curSession.usdBreakdown, callUsd);
+      noteAgentDay(agentDaily, day, 1, null);
+
       (agg[day] || (agg[day] = {}));
-      const slot = agg[day][mid] || (agg[day][mid] = { inp: 0, out: 0, cw1h: 0, cw5m: 0, cr: 0, n: 0 });
+      (agg[day][project.id] || (agg[day][project.id] = {}));
+      const slot = agg[day][project.id][mid] || (agg[day][project.id][mid] = { inp: 0, out: 0, cw1h: 0, cw5m: 0, cr: 0, n: 0 });
       slot.inp += inp;
       slot.out += out;
       slot.cw1h += cw1h;
@@ -153,27 +243,31 @@ export function collect() {
       slot.cr += cr;
       slot.n += 1;
     }
+    if (session && session.modelCallCount > 0) sessions.push(materializeSession(session));
   }
 
   walk(LOG_ROOT);
 
   const entries = [];
   for (const date of Object.keys(agg)) {
-    for (const [model, s] of Object.entries(agg[date])) {
-      const ub = usdBreakdownOf(model, s);
-      entries.push({
-        date,
-        model,
-        tok: tokOf(s),
-        usd: round4(ub.input + ub.output + ub.cacheWrite + ub.cacheRead),
-        tokBreakdown: tokBreakdownOf(s),
-        usdBreakdown: {
-          input: round4(ub.input),
-          output: round4(ub.output),
-          cacheWrite: round4(ub.cacheWrite),
-          cacheRead: round4(ub.cacheRead),
-        },
-      });
+    for (const [projectId, byModel] of Object.entries(agg[date])) {
+      for (const [model, s] of Object.entries(byModel)) {
+        const ub = usdBreakdownOf(model, s);
+        entries.push({
+          date,
+          project: projects[projectId] || projectOf(null),
+          model,
+          tok: tokOf(s),
+          usd: ub.input + ub.output + ub.cacheWrite + ub.cacheRead,
+          tokBreakdown: tokBreakdownOf(s),
+          usdBreakdown: {
+            input: ub.input,
+            output: ub.output,
+            cacheWrite: ub.cacheWrite,
+            cacheRead: ub.cacheRead,
+          },
+        });
+      }
     }
   }
 
@@ -188,5 +282,7 @@ export function collect() {
     pricing,
     limits: readClaudeMeterLimits(), // 没装 ClaudeMeter → null
     source: LOG_ROOT,
+    sessions,
+    agentDaily,
   };
 }
