@@ -12,6 +12,33 @@
   .ucb-section-toggle:focus-visible{outline:2px solid rgba(217,119,87,.45); outline-offset:3px; border-radius:8px;}
   .ucb-section-btn{height:24px; min-width:46px; border:1px solid rgba(30,28,24,.1); border-radius:8px; background:#FFFFFF; color:#847F76; font:inherit; font-size:11.5px; cursor:pointer; padding:0 9px;}
   .ucb-section-toggle:hover .ucb-section-btn{border-color:rgba(30,28,24,.18); color:#1E1C18; box-shadow:0 1px 2px rgba(30,28,24,.08);}
+  .ucb-project-picker{position:relative; flex:1 1 300px; max-width:520px;}
+  .ucb-project-input{width:100%; height:34px; box-sizing:border-box; border-radius:9px; border:1px solid rgba(30,28,24,.1); background:#FBFAF8; color:#1E1C18; font:inherit; font-size:12.5px; padding:0 32px 0 10px; outline:none;}
+  .ucb-project-input:focus{border-color:rgba(217,119,87,.42); box-shadow:0 0 0 3px rgba(217,119,87,.1);}
+  .ucb-project-caret{position:absolute; right:10px; top:8px; color:#ABA59C; font-size:12px; pointer-events:none;}
+  .ucb-project-menu{display:none; position:absolute; z-index:50; left:0; right:0; top:39px; max-height:280px; overflow:auto; border-radius:11px; border:1px solid rgba(30,28,24,.13); background:#FFFFFF; box-shadow:0 18px 40px -18px rgba(30,28,24,.36), 0 4px 12px -8px rgba(30,28,24,.18); padding:6px;}
+  .ucb-project-menu.is-open{display:block;}
+  .ucb-project-option{width:100%; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; text-align:left; border:0; background:transparent; color:#1E1C18; border-radius:8px; padding:8px 9px; font:inherit; cursor:pointer;}
+  .ucb-project-option:hover,.ucb-project-option.is-active{background:#F5F2ED;}
+  .ucb-project-option b{font-size:12.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .ucb-project-option span{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10.5px; color:#ABA59C; white-space:nowrap;}
+  .ucb-project-group{font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C; padding:7px 9px 4px;}
+  .ucb-section-title-cn{font-size:11px; font-weight:700; letter-spacing:.04em; color:#ABA59C;}
+  .ucb-section-title-en{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10px; color:#C9C3BA; margin-left:3px;}
+  .ucb-decision-card{background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:12px 13px; min-height:96px; box-sizing:border-box;}
+  .ucb-decision-head{display:flex; align-items:baseline; gap:7px; margin-bottom:7px;}
+  .ucb-decision-title{font-size:12px; font-weight:700; color:#847F76;}
+  .ucb-decision-kicker{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:9.5px; color:#C9C3BA;}
+  .ucb-decision-value{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-weight:600; font-size:21px; line-height:1.12;}
+  .ucb-decision-meta{font-size:11.5px; color:#847F76; margin-top:7px;}
+  @media (max-width:520px){
+    .ucb-project-picker{flex-basis:100%; max-width:none;}
+    .ucb-decision-card{min-height:0; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:5px 10px; align-items:center; padding:11px 12px;}
+    .ucb-decision-head{margin:0; grid-column:1/2;}
+    .ucb-decision-value{grid-column:2/3; grid-row:1/2; text-align:right; font-size:18px; max-width:112px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+    .ucb-decision-card .ucb-decision-bar{display:none;}
+    .ucb-decision-meta{grid-column:1/-1; margin-top:2px;}
+  }
 
   /* ===== 菜单栏 app 视图开关(由 ?view= 切;默认=设计原型,浏览器预览用) ===== */
   /* 弹窗模式:内容按窗口宽铺满(border-box),圆角/边框交给原生 NSPopover,网页不画 */
@@ -162,8 +189,12 @@
       <div id="toolTabs" style="display:flex; gap:6px; margin-bottom:18px; flex-wrap:wrap;"></div>
 
       <div id="projectBar" style="display:flex; align-items:center; gap:10px; margin:-4px 0 18px; flex-wrap:wrap;">
-        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">项目</span>
-        <select id="projectSelect" style="min-width:220px; max-width:100%; height:32px; border-radius:9px; border:1px solid rgba(30,28,24,.1); background:#FBFAF8; color:#1E1C18; font:inherit; font-size:12.5px; padding:0 10px; outline:none;"></select>
+        <span class="ucb-section-title-cn">项目</span>
+        <div class="ucb-project-picker">
+          <input id="projectSearch" class="ucb-project-input" type="search" autocomplete="off" placeholder="搜索项目，默认优先今日和最近活跃">
+          <span class="ucb-project-caret">⌄</span>
+          <div id="projectSuggest" class="ucb-project-menu"></div>
+        </div>
         <span id="projectPath" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10.5px; color:#ABA59C; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:430px;"></span>
       </div>
 
@@ -198,7 +229,7 @@
 
       <!-- v0.4 Project Monitor -->
       <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
-        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">项目监控</span>
+        <span class="ucb-section-title-cn">项目监控</span><span class="ucb-section-title-en">Project monitor</span>
         <span id="projectMonitorMeta" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10.5px; color:#ABA59C;"></span>
         <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
       </div>
@@ -206,7 +237,7 @@
 
       <!-- 今日 Top 项目 -->
       <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
-        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">今日 Top 项目</span>
+        <span class="ucb-section-title-cn">今日最高项目</span><span class="ucb-section-title-en">Top project</span>
         <span id="todayProjectDate" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10.5px; color:#ABA59C;"></span>
         <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
       </div>
@@ -214,35 +245,35 @@
 
       <!-- 项目分布 -->
       <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
-        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">按项目自动用量</span>
+        <span class="ucb-section-title-cn">按项目自动用量</span><span class="ucb-section-title-en">Project usage</span>
         <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
       </div>
       <div id="projectRank" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:10px;"></div>
 
       <!-- 任务标签 -->
       <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
-        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">任务标签 / 手动归因</span>
+        <span class="ucb-section-title-cn">任务标签 / 手动归因</span><span class="ucb-section-title-en">Manual labels</span>
         <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
       </div>
       <div id="taskLabels" style="background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:13px 14px;"></div>
 
       <!-- Agent 放大趋势 -->
       <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
-        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">Agent 使用趋势</span>
+        <span class="ucb-section-title-cn">Agent 使用趋势</span><span class="ucb-section-title-en">Agent trend</span>
         <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
       </div>
       <div id="agentTrend" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:10px;"></div>
 
       <!-- 实时限额 -->
       <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
-        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">实时限额</span>
+        <span class="ucb-section-title-cn">实时限额</span><span class="ucb-section-title-en">Live limits</span>
         <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
       </div>
       <div id="limitsGrid" style="display:grid; grid-template-columns:1fr 1fr; gap:14px;"></div>
 
       <!-- 每日用量 -->
       <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
-        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">每日用量</span>
+        <span class="ucb-section-title-cn">每日用量</span><span class="ucb-section-title-en">Daily usage</span>
         <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
       </div>
       <div id="dailyUsagePanel" style="background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:16px 16px 14px;">
@@ -262,7 +293,7 @@
 
       <!-- 单价 -->
       <div style="display:flex; align-items:center; gap:11px; margin:26px 0 13px;">
-        <span style="font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">单价 · USD / 百万 token</span>
+        <span class="ucb-section-title-cn">单价</span><span class="ucb-section-title-en">USD / 百万 token</span>
         <span style="flex:1; height:1px; background:rgba(30,28,24,.08);"></span>
       </div>
       <div id="pricing" style="background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:4px 2px; overflow-x:auto;"></div>
@@ -306,8 +337,10 @@ document.addEventListener("DOMContentLoaded", async function(){
   ];
   // 状态先声明(rebuildModels 要用 st.on)
   var st = { view:"bar", metric:"tok", period:"month", tool:"all", project:"all", on:Object.create(null) };
+  var projectQuery = "";
+  var projectMenuOpen = false;
   var TASK_LABEL_KEY = "usage-dashboard-task-labels-v1";
-  var SECTION_STATE_KEY = "usage-dashboard-section-collapse-v1";
+  var SECTION_STATE_KEY = "usage-dashboard-section-collapse-v2";
   var taskLabels = loadTaskLabels();
   var editingTaskLabelId = null;
   var sectionState = loadSectionState();
@@ -324,8 +357,8 @@ document.addEventListener("DOMContentLoaded", async function(){
   function setupCollapsibleSections(){
     var sections=[
       { id:"projectMonitor", defaultOpen:true },
-      { id:"todayProjectRank", defaultOpen:true },
-      { id:"projectRank", defaultOpen:true },
+      { id:"todayProjectRank", defaultOpen:false },
+      { id:"projectRank", defaultOpen:false },
       { id:"limitsGrid", defaultOpen:true },
       { id:"dailyUsagePanel", defaultOpen:true },
       { id:"taskLabels", defaultOpen:false },
@@ -483,6 +516,19 @@ document.addEventListener("DOMContentLoaded", async function(){
       return e && ((e.tok||0)>0 || (e.usd||0)>0);
     });
   }
+  function projectSearchText(p){
+    return [p.id, p.name, p.path, (p.tools||[]).join(" ")].filter(Boolean).join(" ").toLowerCase();
+  }
+  function projectCurrentScore(p){
+    var today=days.length ? metricValue(summarizeProjectRange(p.id, days.slice(-1))) : 0;
+    var seven=metricValue(summarizeProjectRange(p.id, days.slice(-7)));
+    var last=p.lastActiveDate ? Date.parse(p.lastActiveDate+"T00:00:00") : 0;
+    return { today:today, seven:seven, last:last, total:today*1000000 + seven*1000 + (last||0)/1e8 + (st.project===p.id?1e15:0) };
+  }
+  function projectRowsByCurrent(){
+    return PROJECTS.map(function(p){ return { project:p, score:projectCurrentScore(p) }; })
+      .sort(function(a,b){ return (b.score.total-a.score.total) || (b.project.tok-a.project.tok) || String(a.project.name).localeCompare(String(b.project.name)); });
+  }
 
   // 当前工具筛选下可见的模型
   function viz(){ return st.tool==="all" ? MODELS : MODELS.filter(function(m){ return m.tool===st.tool; }); }
@@ -617,6 +663,12 @@ document.addEventListener("DOMContentLoaded", async function(){
     var freshness=f.freshness==="stale" ? " · 快照偏旧" : "";
     var rate=f.pctPerHour!=null ? " · "+f.basisLabel+" "+(Math.round(f.pctPerHour*10)/10)+"%/h" : "";
     return "限额百分比预测 · "+f.text+" · 已用 "+Math.round(f.pctUsed)+"%"+rate+tokenVelocityLine(f.tool)+freshness;
+  }
+  function forecastShortLine(f){
+    if(!f || f.status==="unknown") return f&&f.text ? f.text : "限额数据不足";
+    var base=(f.tool ? toolLabel(f.tool)+" "+f.winShort+" · " : "")+f.text+" · 已用 "+Math.round(f.pctUsed)+"%";
+    if(f.freshness==="stale") base+=" · 快照偏旧";
+    return base;
   }
   function realCostSummary(){
     var tokB=zeroBreak(), usdB=zeroBreak();
@@ -761,7 +813,8 @@ document.addEventListener("DOMContentLoaded", async function(){
       return { project:p, period:period, info:info, periodMetric:periodMetric, todayMetric:todayMetric, sevenMetric:sevenMetric, share:totalToday>0?todayMetric/totalToday:null };
     }).filter(function(row){ return row.periodMetric>0 || row.todayMetric>0 || row.sevenMetric>0; });
     rows.sort(function(a,b){
-      return (b.periodMetric-a.periodMetric) || (b.todayMetric-a.todayMetric) || (b.period.tok-a.period.tok) || String(a.project.name).localeCompare(String(b.project.name));
+      var aActive=st.project===a.project.id ? 1 : 0, bActive=st.project===b.project.id ? 1 : 0;
+      return (bActive-aActive) || (b.todayMetric-a.todayMetric) || (b.sevenMetric-a.sevenMetric) || (b.info.risePct||0)-(a.info.risePct||0) || (b.periodMetric-a.periodMetric) || String(a.project.name).localeCompare(String(b.project.name));
     });
     return rows;
   }
@@ -812,28 +865,28 @@ document.addEventListener("DOMContentLoaded", async function(){
     } else { tr.style.display="none"; }
   }
 
-  function decisionCell(title, body, meta, tone){
+  function decisionCell(title, kicker, body, meta, tone){
     tone = tone || { fg:"#1E1C18", bg:"#FBFAF8", bar:"#D97757" };
-    return '<div style="background:'+tone.bg+'; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:13px 14px; min-height:116px; box-sizing:border-box;">'
-      +'<div style="font-size:10.5px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C; margin-bottom:9px;">'+esc(title)+'</div>'
-      +'<div style="font-family:'+MONO+'; font-weight:600; font-size:22px; line-height:1.12; color:'+tone.fg+';">'+body+'</div>'
-      +'<div style="height:4px; border-radius:4px; background:rgba(30,28,24,.08); overflow:hidden; margin:11px 0 9px;"><i style="display:block; height:100%; width:100%; background:'+tone.bar+';"></i></div>'
-      +'<div style="font-size:11.5px; color:#847F76;">'+meta+'</div>'
+    return '<div class="ucb-decision-card" style="background:'+tone.bg+';">'
+      +'<div class="ucb-decision-head"><span class="ucb-decision-title">'+esc(title)+'</span><span class="ucb-decision-kicker">'+esc(kicker)+'</span></div>'
+      +'<div class="ucb-decision-value" style="color:'+tone.fg+';">'+body+'</div>'
+      +'<div class="ucb-decision-bar" style="height:4px; border-radius:4px; background:rgba(30,28,24,.08); overflow:hidden; margin:9px 0 0;"><i style="display:block; height:100%; width:100%; background:'+tone.bar+';"></i></div>'
+      +'<div class="ucb-decision-meta">'+meta+'</div>'
       +'</div>';
   }
   function renderDecisionStrip(){
     var box=$("decisionStrip"); if(!box) return;
     var f=bestForecast(st.tool), tone=statusTone(f.status), rc=realCostSummary(), today=todayTopProjects(), top=today.rows[0];
     var forecastBody = f.status==="unknown" ? "未知" : statusLabel(f.status);
-    var forecastMeta = (f.tool ? esc(toolLabel(f.tool)+" "+f.winShort)+" · " : "") + esc(forecastLine(f));
+    var forecastMeta = esc(forecastShortLine(f));
     var realBody = fmtUSD(rc.usdTotal);
-    var realMeta = '等价 USD · Fresh '+fmtTok(rc.freshTok)+' · Cache Read '+fmtShare(rc.cacheReadShare);
+    var realMeta = 'API 价折合 · Fresh '+fmtTok(rc.freshTok)+' · Cache Read '+fmtShare(rc.cacheReadShare);
     var topBody = top ? esc(top.name) : "暂无项目";
-    var topMeta = top ? ('今日 '+esc(today.date)+' · '+fmtUSD(top.usd)+' · Fresh '+fmtTok(top.freshTok)+' <span style="display:inline-flex; gap:4px; margin-left:5px; vertical-align:1px;">'+projectToolsHtml(top.tools)+'</span>') : '今日 UTC+8 暂无项目用量';
+    var topMeta = top ? ('今日 '+fmtUSD(top.usd)+' · Fresh '+fmtTok(top.freshTok)+' <span style="display:inline-flex; gap:4px; margin-left:5px; vertical-align:1px;">'+projectToolsHtml(top.tools)+'</span>') : '今日 UTC+8 暂无项目用量';
     box.innerHTML =
-      decisionCell("Burn-down Forecast", forecastBody, forecastMeta, tone) +
-      decisionCell("Real Cost View", realBody, realMeta, { fg:"#C2603E", bg:"#FBFAF8", bar:"#D97757" }) +
-      decisionCell("Today's Top Project", topBody, topMeta, { fg:"#1E1C18", bg:"#FBFAF8", bar:"#7C8FA3" });
+      decisionCell("额度消耗预测", "Burn-down", forecastBody, forecastMeta, tone) +
+      decisionCell("等价成本", "API equivalent", realBody, realMeta, { fg:"#C2603E", bg:"#FBFAF8", bar:"#D97757" }) +
+      decisionCell("今日最高项目", "Top project", topBody, topMeta, { fg:"#1E1C18", bg:"#FBFAF8", bar:"#7C8FA3" });
   }
   function focusStat(label, value, meta){
     return '<div style="min-height:78px; background:#FFFFFF; border:1px solid rgba(30,28,24,.08); border-radius:10px; padding:10px 11px; box-sizing:border-box;">'
@@ -1064,24 +1117,46 @@ document.addEventListener("DOMContentLoaded", async function(){
     });
   }
 
+  function projectOptionButton(id, name, meta, active){
+    return '<button type="button" class="ucb-project-option'+(active?' is-active':'')+'" data-project="'+esc(id)+'"><b>'+esc(name)+'</b><span>'+esc(meta||"")+'</span></button>';
+  }
+  function renderProjectSuggest(){
+    var menu=$("projectSuggest"); if(!menu) return;
+    var q=(projectQuery||"").trim().toLowerCase(), html="";
+    var allMeta=PROJECTS.length ? PROJECTS.length+" 个项目" : "暂无项目数据";
+    if(!q){
+      html+='<div class="ucb-project-group">快捷选择</div>';
+      html+=projectOptionButton("all", "全部项目", allMeta, st.project==="all");
+      var todayRows=projectRowsByCurrent().filter(function(row){ return row.score.today>0; }).slice(0,5);
+      if(todayRows.length){
+        html+='<div class="ucb-project-group">今日有用量</div>';
+        todayRows.forEach(function(row){ html+=projectOptionButton(row.project.id, row.project.name || projectDisplayName(row.project.id), "今日 "+metricLabel(row.score.today), st.project===row.project.id); });
+      }
+      var recentRows=projectRowsByCurrent().filter(function(row){ return row.score.today<=0 && row.score.seven>0; }).slice(0,5);
+      if(recentRows.length){
+        html+='<div class="ucb-project-group">最近活跃</div>';
+        recentRows.forEach(function(row){ html+=projectOptionButton(row.project.id, row.project.name || projectDisplayName(row.project.id), "7天 "+metricLabel(row.score.seven), st.project===row.project.id); });
+      }
+    } else {
+      var found=PROJECTS.filter(function(p){ return projectSearchText(p).indexOf(q)>=0; }).slice(0,12);
+      html+='<div class="ucb-project-group">搜索结果</div>';
+      if(found.length){
+        found.forEach(function(p){ var score=projectCurrentScore(p); html+=projectOptionButton(p.id, p.name || projectDisplayName(p.id), score.today>0 ? "今日 "+metricLabel(score.today) : (score.seven>0 ? "7天 "+metricLabel(score.seven) : "历史项目"), st.project===p.id); });
+      } else {
+        html+='<div style="padding:10px 9px; color:#ABA59C; font-size:12.5px;">没有匹配项目</div>';
+      }
+    }
+    menu.innerHTML=html;
+    menu.classList.toggle("is-open", projectMenuOpen);
+  }
   function renderProjectSelect(){
-    var sel=$("projectSelect"), pathEl=$("projectPath");
-    if(!sel) return;
-    var cur=st.project;
-    sel.innerHTML="";
-    var all=document.createElement("option");
-    all.value="all"; all.textContent="全部项目";
-    sel.appendChild(all);
-    PROJECTS.forEach(function(p){
-      var opt=document.createElement("option");
-      opt.value=p.id;
-      opt.textContent=p.name || "未知项目";
-      sel.appendChild(opt);
-    });
-    sel.value = projectById[cur] ? cur : "all";
-    st.project = sel.value;
-    var p=projectById[st.project];
-    if(pathEl) pathEl.textContent = p ? "已聚焦 "+(p.name || "未知项目") : (PROJECTS.length ? PROJECTS.length+" 个项目" : "暂无项目数据");
+    var input=$("projectSearch"), pathEl=$("projectPath");
+    if(!input) return;
+    if(st.project!=="all" && !projectById[st.project]) st.project="all";
+    var p=projectById[st.project], focused=document.activeElement===input;
+    if(!focused || !projectMenuOpen) input.value = p ? (p.name || projectDisplayName(st.project)) : "全部项目";
+    if(pathEl) pathEl.textContent = p ? ("已聚焦 "+(p.name || "未知项目")) : (PROJECTS.length ? PROJECTS.length+" 个项目 · 可搜索" : "暂无项目数据");
+    renderProjectSuggest();
   }
 
   function projectTotal(pid){
@@ -1091,8 +1166,8 @@ document.addEventListener("DOMContentLoaded", async function(){
   }
   function renderProjectMonitor(){
     var box=$("projectMonitor"), meta=$("projectMonitorMeta"); if(!box) return;
-    var rows=projectMonitorRows().slice(0,5);
-    if(meta) meta.textContent = st.tool==="all" ? periodWord()+" · 全部工具" : periodWord()+" · "+toolLabel(st.tool);
+    var rows=projectMonitorRows().slice(0,3);
+    if(meta) meta.textContent = st.tool==="all" ? "今日优先 · 全部工具" : "今日优先 · "+toolLabel(st.tool);
     if(!rows.length){
       box.innerHTML='<div style="grid-column:1/-1; background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:13px 14px; color:#ABA59C; font-size:12.5px;">暂无项目监控数据</div>';
       return;
@@ -1317,7 +1392,51 @@ document.addEventListener("DOMContentLoaded", async function(){
     var b=e.target.closest("button"); if(!b) return; st.period=b.getAttribute("data-p");
     setActive(this,b); renderAll();
   });
-  $("projectSelect").addEventListener("change",function(e){ st.project=e.target.value; renderAll(); });
+  $("projectSearch").addEventListener("focus",function(e){
+    projectMenuOpen=true;
+    projectQuery="";
+    e.target.value="";
+    renderProjectSuggest();
+  });
+  $("projectSearch").addEventListener("input",function(e){
+    projectMenuOpen=true;
+    projectQuery=e.target.value;
+    renderProjectSuggest();
+  });
+  $("projectSearch").addEventListener("keydown",function(e){
+    if(e.key==="Escape"){
+      projectMenuOpen=false;
+      projectQuery="";
+      renderProjectSelect();
+      e.target.blur();
+      return;
+    }
+    if(e.key==="Enter"){
+      var first=$("projectSuggest")&&$("projectSuggest").querySelector("button[data-project]");
+      if(first){
+        st.project=first.getAttribute("data-project");
+        projectMenuOpen=false;
+        projectQuery="";
+        renderAll();
+        e.preventDefault();
+      }
+    }
+  });
+  $("projectSuggest").addEventListener("click",function(e){
+    var b=e.target.closest("button[data-project]"); if(!b) return;
+    st.project=b.getAttribute("data-project");
+    projectMenuOpen=false;
+    projectQuery="";
+    renderAll();
+  });
+  document.addEventListener("click",function(e){
+    var bar=$("projectBar");
+    if(bar && !bar.contains(e.target)){
+      projectMenuOpen=false;
+      projectQuery="";
+      renderProjectSelect();
+    }
+  });
   $("projectRank").addEventListener("click",function(e){
     var b=e.target.closest("button[data-project]"); if(!b) return;
     st.project=b.getAttribute("data-project");
@@ -1431,7 +1550,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     if(mt){
       var tone=statusTone(bf.status);
       mt.style.background=tone.bg;
-      mt.innerHTML='<div style="display:flex; align-items:center; gap:7px; color:'+tone.fg+';"><span style="width:7px; height:7px; border-radius:50%; background:'+tone.bar+';"></span><b style="font-weight:600;">最紧</b><span style="color:#847F76;">'+(bf.tool ? esc(toolLabel(bf.tool)+" "+bf.winShort) : "限额数据")+' · '+esc(forecastLine(bf))+'</span></div>';
+      mt.innerHTML='<div style="display:flex; align-items:center; gap:7px; color:'+tone.fg+';"><span style="width:7px; height:7px; border-radius:50%; background:'+tone.bar+';"></span><b style="font-weight:600;">最紧</b><span style="color:#847F76;">'+esc(forecastShortLine(bf))+'</span></div>';
     }
   }
   function clockHM(iso){ if(!iso) return ""; var d=new Date(iso); if(isNaN(d)) return ""; return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
