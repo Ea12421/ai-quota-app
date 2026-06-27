@@ -31,6 +31,9 @@
   .ucb-decision-kicker{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:9.5px; color:#C9C3BA;}
   .ucb-decision-value{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-weight:600; font-size:21px; line-height:1.12;}
   .ucb-decision-meta{font-size:11.5px; color:#847F76; margin-top:7px;}
+  .ucb-decision-card[data-project]{cursor:pointer;}
+  .ucb-decision-card[data-project]:hover{border-color:rgba(30,28,24,.16); box-shadow:0 6px 18px -14px rgba(30,28,24,.45);}
+  .ucb-decision-card[data-project]:focus-visible{outline:2px solid rgba(217,119,87,.4); outline-offset:3px;}
   @media (max-width:520px){
     .ucb-project-picker{flex-basis:100%; max-width:none;}
     .ucb-decision-card{min-height:0; display:grid; grid-template-columns:minmax(0,1fr) auto; gap:5px 10px; align-items:center; padding:11px 12px;}
@@ -865,9 +868,13 @@ document.addEventListener("DOMContentLoaded", async function(){
     } else { tr.style.display="none"; }
   }
 
-  function decisionCell(title, kicker, body, meta, tone){
+  function decisionCell(title, kicker, body, meta, tone, action){
     tone = tone || { fg:"#1E1C18", bg:"#FBFAF8", bar:"#D97757" };
-    return '<div class="ucb-decision-card" style="background:'+tone.bg+';">'
+    var attrs="";
+    if(action && action.projectId){
+      attrs=' data-project="'+esc(action.projectId)+'" role="button" tabindex="0" aria-label="'+esc("聚焦项目 "+(action.projectName||action.projectId))+'" title="聚焦这个项目"';
+    }
+    return '<div class="ucb-decision-card"'+attrs+' style="background:'+tone.bg+';">'
       +'<div class="ucb-decision-head"><span class="ucb-decision-title">'+esc(title)+'</span><span class="ucb-decision-kicker">'+esc(kicker)+'</span></div>'
       +'<div class="ucb-decision-value" style="color:'+tone.fg+';">'+body+'</div>'
       +'<div class="ucb-decision-bar" style="height:4px; border-radius:4px; background:rgba(30,28,24,.08); overflow:hidden; margin:9px 0 0;"><i style="display:block; height:100%; width:100%; background:'+tone.bar+';"></i></div>'
@@ -880,13 +887,13 @@ document.addEventListener("DOMContentLoaded", async function(){
     var forecastBody = f.status==="unknown" ? "未知" : statusLabel(f.status);
     var forecastMeta = esc(forecastShortLine(f));
     var realBody = fmtUSD(rc.usdTotal);
-    var realMeta = 'API 价折合 · Fresh '+fmtTok(rc.freshTok)+' · Cache Read '+fmtShare(rc.cacheReadShare);
+    var realMeta = '按 API 单价估算，非真实账单 · Fresh '+fmtTok(rc.freshTok)+' · Cache Read '+fmtShare(rc.cacheReadShare);
     var topBody = top ? esc(top.name) : "暂无项目";
-    var topMeta = top ? ('今日 '+fmtUSD(top.usd)+' · Fresh '+fmtTok(top.freshTok)+' <span style="display:inline-flex; gap:4px; margin-left:5px; vertical-align:1px;">'+projectToolsHtml(top.tools)+'</span>') : '今日 UTC+8 暂无项目用量';
+    var topMeta = top ? ('今天最高用量 · '+fmtUSD(top.usd)+' · Fresh '+fmtTok(top.freshTok)+' <span style="display:inline-flex; gap:4px; margin-left:5px; vertical-align:1px;">'+projectToolsHtml(top.tools)+'</span>') : '今日 UTC+8 暂无项目用量';
     box.innerHTML =
-      decisionCell("额度消耗预测", "Burn-down", forecastBody, forecastMeta, tone) +
-      decisionCell("等价成本", "API equivalent", realBody, realMeta, { fg:"#C2603E", bg:"#FBFAF8", bar:"#D97757" }) +
-      decisionCell("今日最高项目", "Top project", topBody, topMeta, { fg:"#1E1C18", bg:"#FBFAF8", bar:"#7C8FA3" });
+      decisionCell("额度耗尽预测", "按限额快照", forecastBody, forecastMeta, tone) +
+      decisionCell("折合成本", "API 估算", realBody, realMeta, { fg:"#C2603E", bg:"#FBFAF8", bar:"#D97757" }) +
+      decisionCell("今日最耗项目", "可点击聚焦", topBody, topMeta, { fg:"#1E1C18", bg:"#FBFAF8", bar:"#7C8FA3" }, top ? { projectId:top.id, projectName:top.name } : null);
   }
   function focusStat(label, value, meta){
     return '<div style="min-height:78px; background:#FFFFFF; border:1px solid rgba(30,28,24,.08); border-radius:10px; padding:10px 11px; box-sizing:border-box;">'
@@ -1440,6 +1447,18 @@ document.addEventListener("DOMContentLoaded", async function(){
   $("projectRank").addEventListener("click",function(e){
     var b=e.target.closest("button[data-project]"); if(!b) return;
     st.project=b.getAttribute("data-project");
+    renderAll();
+  });
+  $("decisionStrip").addEventListener("click",function(e){
+    var b=e.target.closest("[data-project]"); if(!b) return;
+    st.project=b.getAttribute("data-project");
+    renderAll();
+  });
+  $("decisionStrip").addEventListener("keydown",function(e){
+    if(e.key!=="Enter" && e.key!==" ") return;
+    var b=e.target.closest("[data-project]"); if(!b) return;
+    st.project=b.getAttribute("data-project");
+    e.preventDefault();
     renderAll();
   });
   $("projectMonitor").addEventListener("click",function(e){
