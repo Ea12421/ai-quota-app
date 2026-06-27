@@ -4,6 +4,67 @@
 
 它不是云端 SaaS，也不需要登录账号。核心原则是：只读本机用量数据、本地计算、本机展示、不提交真实用量数据。
 
+## 安装和使用边界
+
+这个仓库脱敏后仍然是可运行项目，不是空壳。需要注意的是：当前版本不是“只拷贝一个 `.app` 就能在任意机器独立运行”的发布包，它仍依赖仓库里的 `engine/` 和 `web/` 源码目录。
+
+推荐给别人或给其他 AI 使用时，发整个仓库或 GitHub 链接，不要只发 `app/build/用量看板.app`。
+
+### 最小依赖
+
+- macOS。
+- Node.js，建议用 Homebrew 安装到常见路径，例如 `/opt/homebrew/bin/node` 或 `/usr/local/bin/node`。
+- 如果要打包菜单栏 App，需要 macOS Command Line Tools 里的 `swiftc`、`codesign`。
+- Claude Code / Codex 本机日志。没有对应日志时不会崩，但看板会显示空数据或未知额度。
+- Claude Code 的 5h / 7d 限额如果要点亮，依赖本机已有的 ClaudeMeter 导出；没有也可以使用其他用量能力。
+
+### 从零运行
+
+```bash
+git clone https://github.com/Ea12421/ai-quota-app.git
+cd ai-quota-app
+node --check engine/usage-data.mjs engine/quota-api.mjs
+node engine/usage-data.mjs --serve 7799
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:7799/
+```
+
+### 打包并运行菜单栏 App
+
+```bash
+./app/build.sh
+open app/build/用量看板.app
+```
+
+App 默认按这个相对结构找项目根目录：
+
+```text
+<项目目录>/app/build/用量看板.app
+<项目目录>/engine/
+<项目目录>/web/
+```
+
+所以如果把 `.app` 单独拖到 `/Applications`，它可能找不到 `engine/` 和 `web/`。当前建议保持 `.app` 在仓库的 `app/build/` 里运行。
+
+如果确实要从其他位置启动，可以用环境变量指定项目根目录并直接运行二进制：
+
+```bash
+AI_QUOTA_APP_ROOT="/path/to/ai-quota-app" "/path/to/用量看板.app/Contents/MacOS/UsageBar"
+```
+
+这仍然要求 `/path/to/ai-quota-app` 里有 `engine/` 和 `web/`。
+
+### 数据为空时怎么判断
+
+- `usage.json` 不在 GitHub 里，第一次运行会在本机生成。
+- 没有 Claude Code / Codex 日志时，`daily` 和 `projects` 可能为空。
+- 没有限额快照时，quota API 会返回 `unknown`，这是保守降级，不是项目损坏。
+- 如果 App 胶囊不显示数据，先确认数据服务能打开：`http://127.0.0.1:7799/api/usage.json`。
+
 ## 现在能做什么
 
 ### 1. macOS 菜单栏看板
