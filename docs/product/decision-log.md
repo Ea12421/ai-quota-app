@@ -87,7 +87,7 @@
 影响:
 
 - `usd` 必须继续标注为 API 价折合的等价价值，非真实账单。
-- Codex `cacheWrite = 0` 属正常口径。
+- Codex / OpenAI 本地日志未提供 `cacheWrite` 单独字段；产品展示用“没读取到”，JSON 保留 `cacheWrite: 0` 仅用于兼容四分类结构。
 
 ### D-007: v0.2 接受 project 归因数据层改动
 

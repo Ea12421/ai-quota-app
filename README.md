@@ -320,6 +320,7 @@ engine/usage-data.mjs  聚合、脱敏、生成统一 usage.json
 - `projects[]`: 当前可选项目列表，项目路径默认脱敏。
 - `tokBreakdown`: input / output / cache write / cache read。
 - `usdBreakdown`: input / output / cache write / cache read 的等价 USD。
+- Codex / OpenAI 本地日志当前未提供 cache write 单独字段；界面显示为“没读取到”，JSON 中保留 `cacheWrite: 0` 只是兼容旧四分类结构。
 - `usageVelocity`: 15m / 60m token/hour 聚合，只输出派生统计。
 - `limitSnapshots`: 最近限额百分比快照，用于 quota API 和 Burn-down 的短窗口预测。
 - 价格是按本地价格表折算的等价值，不等于真实账单。

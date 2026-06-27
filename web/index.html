@@ -486,6 +486,10 @@ document.addEventListener("DOMContentLoaded", async function(){
 
   // 当前工具筛选下可见的模型
   function viz(){ return st.tool==="all" ? MODELS : MODELS.filter(function(m){ return m.tool===st.tool; }); }
+  function hasReadableCacheWrite(m){
+    var p=(data.pricing||{})[m.id];
+    return !!p && p.cacheWrite1h!=null && p.cacheWrite5m!=null;
+  }
 
   function fmtUSD(v){ if(v>=1000) return "$"+(v/1000).toFixed(1)+"k"; return "$"+(v<10?v.toFixed(1):Math.round(v)); }
   function fmtUSDbig(v){ return v.toLocaleString("en-US",{maximumFractionDigits:0}); }
@@ -1015,14 +1019,17 @@ document.addEventListener("DOMContentLoaded", async function(){
   // 当前区间+工具下的 token/美元 四分类(输入/输出/写缓存/读缓存)
   function renderBreak(){
     var slice=periodSlice(), VM=viz(), b={input:0,output:0,cacheWrite:0,cacheRead:0};
+    var contributing=[];
     slice.forEach(function(d){ VM.forEach(function(m){ if(!st.on[m.id]) return;
-      var src=(st.metric==="usd"? cell(d,m.id).usdBreakdown : cell(d,m.id).tokBreakdown)||ZB;
+      var c=cell(d,m.id), src=(st.metric==="usd"? c.usdBreakdown : c.tokBreakdown)||ZB;
       b.input+=src.input||0; b.output+=src.output||0; b.cacheWrite+=src.cacheWrite||0; b.cacheRead+=src.cacheRead||0;
+      if(((c.tok||0)>0 || (c.usd||0)>0) && contributing.indexOf(m)<0) contributing.push(m);
     }); });
     var fmt = st.metric==="usd"? fmtUSD : fmtTok;
-    var items=[["输入",b.input],["输出",b.output],["写缓存",b.cacheWrite],["读缓存",b.cacheRead]];
+    var cacheWriteUnreadable = contributing.length>0 && contributing.every(function(m){ return !hasReadableCacheWrite(m); });
+    var items=[["输入",fmt(b.input)],["输出",fmt(b.output)],["写缓存",cacheWriteUnreadable ? "没读取到" : fmt(b.cacheWrite)],["读缓存",fmt(b.cacheRead)]];
     $("heroBreak").innerHTML = items.map(function(it){
-      return '<span style="color:#ABA59C;">'+it[0]+' <b style="color:#847F76; font-weight:600;">'+fmt(it[1])+'</b></span>';
+      return '<span style="color:#ABA59C;">'+it[0]+' <b style="color:#847F76; font-weight:600;">'+it[1]+'</b></span>';
     }).join('<span style="color:#CBC5BB; margin:0 1px;">·</span>');
   }
 
@@ -1033,7 +1040,7 @@ document.addEventListener("DOMContentLoaded", async function(){
       +'<span>模型</span><span style="text-align:right;">输入</span><span style="text-align:right;">输出</span><span style="text-align:right;">写缓存 1h/5m</span><span style="text-align:right;">读缓存</span></div>';
     var body="";
     VM.forEach(function(m){ var p=P[m.id]; if(!p) return;
-      var write = (p.cacheWrite1h==null) ? "—" : ("$"+p.cacheWrite1h+" / $"+p.cacheWrite5m);
+      var write = (p.cacheWrite1h==null) ? "没读取到" : ("$"+p.cacheWrite1h+" / $"+p.cacheWrite5m);
       body+='<div style="'+grid+' padding:9px 13px; font-family:'+MONO+'; font-size:12px; color:#847F76; border-bottom:1px solid rgba(30,28,24,.04);">'
         +'<span style="color:#1E1C18;"><i style="width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:7px;vertical-align:middle;background:'+m.color+';"></i>'+esc(m.id)+(p.estimated?' <span style="color:#C2603E; font-size:9.5px;">估</span>':'')+'</span>'
         +'<span style="text-align:right;">$'+p.input+'</span>'
