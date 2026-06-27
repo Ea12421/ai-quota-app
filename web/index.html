@@ -119,7 +119,7 @@
 
       <div style="padding:0 9px 12px;">
         <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:7px;">
-          <span style="font-size:12.5px; color:#1E1C18;">5 小时窗口</span>
+          <span style="font-size:12.5px; color:#1E1C18;">5 小时额度</span>
           <span style="display:flex; align-items:baseline; gap:9px;"><span id="pop5hReset" style="font-size:11px; color:#ABA59C;">未接入</span><span id="pop5hPct" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-weight:600; font-size:12.5px; color:#1E1C18;">—</span></span>
         </div>
         <div style="height:5px; border-radius:4px; background:#ECEAE5; overflow:hidden;"><i id="pop5hBar" style="display:block; height:100%; width:0%; border-radius:4px; background:linear-gradient(90deg,#E08B6B,#D97757);"></i></div>
@@ -575,7 +575,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     return ts;
   }
   function windowMeta(win){
-    return win==="sevenDay" ? { hours:168, short:"7d", label:"7 天额度" } : { hours:5, short:"5h", label:"5 小时窗口" };
+    return win==="sevenDay" ? { hours:168, short:"7天额度", label:"7 天额度" } : { hours:5, short:"5小时额度", label:"5 小时额度" };
   }
   function unknownForecast(tool, win, reason){
     var meta=windowMeta(win);
@@ -606,7 +606,7 @@ document.addEventListener("DOMContentLoaded", async function(){
   function tokenVelocityLine(tool){
     var row=data.usageVelocity&&data.usageVelocity.windows&&data.usageVelocity.windows["15m"]&&data.usageVelocity.windows["15m"].byTool&&data.usageVelocity.windows["15m"].byTool[tool];
     if(!row || !(row.tokPerHour>0)) return "";
-    return " · 15m "+fmtTok(row.tokPerHour)+"/h";
+    return " · 近15分钟约 "+fmtTok(row.tokPerHour)+"/小时";
   }
   function forecastForWindow(tool, win){
     var L=data.limits||{}, lim=L[tool], meta=windowMeta(win), entry=lim&&lim[win];
@@ -616,14 +616,14 @@ document.addEventListener("DOMContentLoaded", async function(){
     var asOfMs=Date.parse((lim&&lim.asOf) || data.updatedAt);
     if(!isFinite(resetMs) || !isFinite(asOfMs)) return unknownForecast(tool, win);
     var nowMs=Date.now();
-    if(resetMs <= nowMs) return unknownForecast(tool, win, "等待新的限额快照");
+    if(resetMs <= nowMs) return unknownForecast(tool, win, "等待新的额度数据");
     var pctUsed=clamp(pct, 0, 100);
     var windowStart=resetMs - meta.hours*MS_HOUR;
     var elapsedHours=clamp((asOfMs-windowStart)/MS_HOUR, 0.05, meta.hours);
     var options=[
-      pctRateFromSnapshots(tool, win, entry.resetAt, asOfMs, 15, "最近15分钟"),
-      pctRateFromSnapshots(tool, win, entry.resetAt, asOfMs, 60, "最近60分钟"),
-      { basis:"window_avg", basisLabel:"窗口平均", pctPerHour:pctUsed/elapsedHours, samples:null }
+      pctRateFromSnapshots(tool, win, entry.resetAt, asOfMs, 15, "近15分钟"),
+      pctRateFromSnapshots(tool, win, entry.resetAt, asOfMs, 60, "近1小时"),
+      { basis:"window_avg", basisLabel:"平均", pctPerHour:pctUsed/elapsedHours, samples:null }
     ].filter(Boolean);
     options.sort(function(a,b){ return b.pctPerHour-a.pctPerHour; });
     var chosen=options[0];
@@ -634,7 +634,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     var ageMs=nowMs-asOfMs, staleMs=win==="fiveHour" ? 15*60000 : 6*MS_HOUR;
     var freshness=!isFinite(ageMs) ? "unknown" : (ageMs>staleMs ? "stale" : "fresh");
     var status=(pctUsed>=90 || (will && etaHours<=1)) ? "critical" : ((pctUsed>=75 || will || freshness==="stale") ? "watch" : "ok");
-    var text=pctPerHour>0 ? (will ? "约 "+fmtDurationHours(etaHours)+" 后耗尽" : "预计 reset 先发生") : "当前速度不足以预测耗尽";
+    var text=pctPerHour>0 ? (will ? "约 "+fmtDurationHours(etaHours)+" 后耗尽" : "会先重置") : "当前速度不足以预测耗尽";
     return { tool:tool, win:win, winShort:meta.short, winLabel:meta.label, status:status, pctUsed:pctUsed, resetAt:entry.resetAt, etaHours:etaHours, willExhaustBeforeReset:will, text:text, asOf:(lim&&lim.asOf)||data.updatedAt, basisLabel:chosen ? chosen.basisLabel : "数据不足", pctPerHour:pctPerHour, freshness:freshness };
   }
   function forecastSeverity(status){ return {critical:3, watch:2, ok:1, unknown:0}[status] || 0; }
@@ -662,15 +662,16 @@ document.addEventListener("DOMContentLoaded", async function(){
     return { fg:"#847F76", bg:"#F1EFEA", bar:"#D8D3CB" };
   }
   function forecastLine(f){
-    if(!f || f.status==="unknown") return "限额百分比预测 · "+(f&&f.text ? f.text : "限额数据不足，无法预测");
-    var freshness=f.freshness==="stale" ? " · 快照偏旧" : "";
-    var rate=f.pctPerHour!=null ? " · "+f.basisLabel+" "+(Math.round(f.pctPerHour*10)/10)+"%/h" : "";
-    return "限额百分比预测 · "+f.text+" · 已用 "+Math.round(f.pctUsed)+"%"+rate+tokenVelocityLine(f.tool)+freshness;
+    if(!f || f.status==="unknown") return "按当前用量估算 · "+(f&&f.text ? f.text : "限额数据不足，无法预测");
+    var freshness=f.freshness==="stale" ? " · 数据有点旧" : "";
+    var speed=Math.round(f.pctPerHour*10)/10;
+    var rate=f.pctPerHour!=null ? (f.basisLabel==="平均" ? " · 平均每小时 "+speed+"%" : " · "+f.basisLabel+"约 "+speed+"%/小时") : "";
+    return "按当前用量估算 · "+f.text+" · 已用 "+Math.round(f.pctUsed)+"%"+rate+tokenVelocityLine(f.tool)+freshness;
   }
   function forecastShortLine(f){
     if(!f || f.status==="unknown") return f&&f.text ? f.text : "限额数据不足";
     var base=(f.tool ? toolLabel(f.tool)+" "+f.winShort+" · " : "")+f.text+" · 已用 "+Math.round(f.pctUsed)+"%";
-    if(f.freshness==="stale") base+=" · 快照偏旧";
+    if(f.freshness==="stale") base+=" · 数据有点旧";
     return base;
   }
   function realCostSummary(){
@@ -891,7 +892,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     var topBody = top ? esc(top.name) : "暂无项目";
     var topMeta = top ? ('今天最高用量 · '+fmtUSD(top.usd)+' · Fresh '+fmtTok(top.freshTok)+' <span style="display:inline-flex; gap:4px; margin-left:5px; vertical-align:1px;">'+projectToolsHtml(top.tools)+'</span>') : '今日 UTC+8 暂无项目用量';
     box.innerHTML =
-      decisionCell("额度耗尽预测", "按限额快照", forecastBody, forecastMeta, tone) +
+      decisionCell("额度耗尽预测", "按当前进度", forecastBody, forecastMeta, tone) +
       decisionCell("折合成本", "API 估算", realBody, realMeta, { fg:"#C2603E", bg:"#FBFAF8", bar:"#D97757" }) +
       decisionCell("今日最耗项目", "可点击聚焦", topBody, topMeta, { fg:"#1E1C18", bg:"#FBFAF8", bar:"#7C8FA3" }, top ? { projectId:top.id, projectName:top.name } : null);
   }
@@ -1569,7 +1570,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     if(mt){
       var tone=statusTone(bf.status);
       mt.style.background=tone.bg;
-      mt.innerHTML='<div style="display:flex; align-items:center; gap:7px; color:'+tone.fg+';"><span style="width:7px; height:7px; border-radius:50%; background:'+tone.bar+';"></span><b style="font-weight:600;">最紧</b><span style="color:#847F76;">'+esc(forecastShortLine(bf))+'</span></div>';
+      mt.innerHTML='<div style="display:flex; align-items:center; gap:7px; color:'+tone.fg+';"><span style="width:7px; height:7px; border-radius:50%; background:'+tone.bar+';"></span><b style="font-weight:600;">注意</b><span style="color:#847F76;">'+esc(forecastShortLine(bf))+'</span></div>';
     }
   }
   function clockHM(iso){ if(!iso) return ""; var d=new Date(iso); if(isNaN(d)) return ""; return ('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2); }
@@ -1594,7 +1595,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     var L=data.limits||{}, tools = st.tool==="all" ? (data.tools||[]) : [st.tool], html="";
     tools.forEach(function(t){
       var lim=L[t]||{};
-      html+=limitCard(t,"5 小时窗口", "fiveHour", lim.fiveHour, lim.asOf);
+      html+=limitCard(t,"5 小时额度", "fiveHour", lim.fiveHour, lim.asOf);
       html+=limitCard(t,"7 天额度", "sevenDay", lim.sevenDay, lim.asOf);
     });
     $("limitsGrid").innerHTML=html;
