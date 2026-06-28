@@ -59,6 +59,38 @@ function mapRateLimits(rl) {
   return { fiveHour: five, sevenDay: seven };
 }
 
+function limitPoolKey(rl) {
+  return String(rl?.limit_id || rl?.limit_name || "codex");
+}
+
+function chooseLimitEntry(pools, field) {
+  let best = null;
+  for (const pool of pools) {
+    const entry = pool.snapshot?.[field];
+    if (!entry || entry.pct == null) continue;
+    if (!best || entry.pct > best.entry.pct || (entry.pct === best.entry.pct && pool.t > best.t)) {
+      best = { entry, ts: pool.ts, t: pool.t };
+    }
+  }
+  return best;
+}
+
+function conservativeLimitsFromPools(latestByPool) {
+  const pools = [...latestByPool.values()]
+    .map((pool) => ({ ...pool, snapshot: mapRateLimits(pool.rl) }))
+    .filter((pool) => pool.snapshot);
+  if (!pools.length) return null;
+  const five = chooseLimitEntry(pools, "fiveHour");
+  const seven = chooseLimitEntry(pools, "sevenDay");
+  if (!five && !seven) return null;
+  const asOfMs = Math.max(five?.t || 0, seven?.t || 0);
+  return {
+    fiveHour: five?.entry || null,
+    sevenDay: seven?.entry || null,
+    asOf: asOfMs ? new Date(asOfMs).toISOString() : null,
+  };
+}
+
 function safeSessionId(file) {
   return `${TOOL}-${crypto.createHash("sha1").update(file).digest("hex").slice(0, 12)}`;
 }
@@ -128,7 +160,7 @@ export function collect() {
   const limitSnapshots = [];
   let filesWithTok = 0;
   let filesSkipped = 0;
-  let latestRL = null; // 最新一条 rate_limits 快照(Codex 自带的 5h/7d 额度)
+  const latestRLByPool = new Map(); // limit_id/limit_name -> 最新 rate_limits。避免模型专属 0% 覆盖主 Codex 限额。
   const roots = [];
 
   // 别名/估价:Codex 内部模型不在价格表里时,按相近主力模型估算
@@ -207,8 +239,10 @@ export function collect() {
       if (o.type === "event_msg" && o.payload && o.payload.type === "token_count") {
         if (o.payload.rate_limits) {
           const t = Date.parse(o.timestamp); // 用数值比时间,避免 ISO 字符串格式混用排错
-          if (!Number.isNaN(t) && (!latestRL || t > latestRL.t)) {
-            latestRL = { ts: o.timestamp, t, rl: o.payload.rate_limits };
+          const poolKey = limitPoolKey(o.payload.rate_limits);
+          const prev = latestRLByPool.get(poolKey);
+          if (!Number.isNaN(t) && (!prev || t > prev.t)) {
+            latestRLByPool.set(poolKey, { ts: o.timestamp, t, rl: o.payload.rate_limits });
           }
           const snapshot = mapRateLimits(o.payload.rate_limits);
           if (snapshot && Number.isFinite(t)) {
@@ -348,9 +382,8 @@ export function collect() {
       : { tool: TOOL, input: 0, output: 0, cacheWrite1h: null, cacheWrite5m: null, cacheRead: 0, estimated: false };
   }
 
-  // Codex 自带的 5h/7d 额度(取最新快照)→ 归一成 {fiveHour, sevenDay, asOf}
-  const limits = mapRateLimits(latestRL ? latestRL.rl : null);
-  if (limits && latestRL) limits.asOf = latestRL.ts; // 快照时间(日志写下时),用于界面标"截至"
+  // Codex 可能同时写入多个 limit_id(例如主 Codex 与模型专属池)。总入口取已用%更高的池,避免较新的 0% 模型池误导用户。
+  const limits = conservativeLimitsFromPools(latestRLByPool);
 
   return {
     tool: TOOL,
