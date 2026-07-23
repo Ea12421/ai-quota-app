@@ -111,6 +111,7 @@
         <span style="font-weight:600; font-size:13px; letter-spacing:.01em;">用量<span style="color:#C2603E;">看板</span></span>
         <span id="updPop" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10.5px; color:#ABA59C;">更新 —</span>
       </div>
+      <div id="mbSource" style="padding:0 9px 9px; margin-top:-5px; font-size:10.5px; line-height:1.35; color:#ABA59C;">本机日志 Token · 非 Profile / 额度口径</div>
 
       <div style="display:flex; align-items:center; justify-content:space-between; padding:0 9px 9px;">
         <span style="font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">实时限额</span>
@@ -183,7 +184,7 @@
         <i style="width:11px; height:11px; border-radius:50%; background:#6FB55E;"></i>
       </span>
       <span style="font-weight:700; margin-left:7px; letter-spacing:.01em;">用量<span style="color:#C2603E;">看板</span></span>
-      <span id="updMain" style="margin-left:auto; font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:11px; color:#ABA59C;">更新于 — · 每 60s</span>
+      <span id="updMain" style="margin-left:auto; font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:11px; color:#ABA59C; text-align:right; line-height:1.25; max-width:430px;">本机日志 · 更新 — · 每 60s</span>
     </div>
 
     <div style="padding:20px 18px 22px;">
@@ -218,7 +219,7 @@
             <button data-p="all" data-coral="1" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 13px; cursor:pointer;">全部</button>
           </div>
           <div id="metricSeg" style="display:flex; gap:3px; background:#ECEAE5; border:1px solid rgba(30,28,24,.06); border-radius:10px; padding:3px;">
-            <button data-m="tok" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 14px; cursor:pointer;">Token</button>
+            <button data-m="tok" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 14px; cursor:pointer;">日志 Token</button>
             <button data-m="usd" data-coral="1" style="font:inherit; font-family:inherit; font-size:12.5px; color:#847F76; background:transparent; border:0; border-radius:7px; padding:6px 14px; cursor:pointer;">美元</button>
           </div>
         </div>
@@ -302,7 +303,7 @@
       <div id="pricing" style="background:#FBFAF8; border:1px solid rgba(30,28,24,.08); border-radius:12px; padding:4px 2px; overflow-x:auto;"></div>
 
       <!-- 口径说明 -->
-      <div id="notice" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10.5px; color:#ABA59C; margin-top:16px; text-align:center; letter-spacing:.01em;"></div>
+      <div id="notice" style="font-family:'JetBrains Mono',ui-monospace,Menlo,monospace; font-size:10.5px; color:#ABA59C; margin:16px auto 0; max-width:720px; text-align:center; line-height:1.45; letter-spacing:.01em;"></div>
 
     </div>
   </div>
@@ -519,6 +520,16 @@ document.addEventListener("DOMContentLoaded", async function(){
       return e && ((e.tok||0)>0 || (e.usd||0)>0);
     });
   }
+  function modelDisplayName(id){
+    if(/^gpt-5\.6-(sol|terra|luna)\b/.test(String(id))) return "GPT-5.6 家族";
+    if(id==="codex-unknown") return "模型名缺失";
+    return id;
+  }
+  function modelTitle(id){
+    if(id==="codex-unknown") return "本机日志缺少模型名，保持独立统计";
+    if(/^gpt-5\.6-(sol|terra|luna)\b/.test(String(id))) return "显示为 GPT-5.6 家族，底层模型ID: "+id;
+    return id;
+  }
   function projectSearchText(p){
     return [p.id, p.name, p.path, (p.tools||[]).join(" ")].filter(Boolean).join(" ").toLowerCase();
   }
@@ -545,6 +556,29 @@ document.addEventListener("DOMContentLoaded", async function(){
   function fmtTok(v){ if(v>=1e6) return (v/1e6).toFixed(1)+"M"; if(v>=1e3) return (v/1e3).toFixed(0)+"k"; return Math.round(v)+""; }
   function fmtShare(v){ return v==null ? "—" : Math.round(v*100)+"%"; }
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c];}); }
+  function clockMDHM(iso){
+    if(!iso) return "—";
+    var d=new Date(iso);
+    if(isNaN(d)) return "—";
+    return ('0'+(d.getMonth()+1)).slice(-2)+'/'+('0'+d.getDate()).slice(-2)+' '+('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2);
+  }
+  function sourceSummary(){
+    var srcs=(data._meta&&data._meta.sources)||[];
+    var parts=[];
+    srcs.forEach(function(s){
+      if(!s || !s.tool) return;
+      if(s.tool==="codex") parts.push("Codex ~/.codex/sessions");
+      else if(s.tool==="claude-code") parts.push("Claude ~/.claude/projects");
+      else parts.push(toolLabel(s.tool)+" 本机日志");
+    });
+    return parts.length ? parts.join(" · ") : "本机日志";
+  }
+  function tokenScopeText(){
+    return "本机日志 Token（含 Cache Read），不是 Codex Profile / 额度口径，不可一一对账";
+  }
+  function sourceScopeText(){
+    return "来源 "+sourceSummary()+" · 数据更新时间 "+clockMDHM(data.updatedAt);
+  }
   var MS_HOUR = 3600000;
   function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
   function finiteNumber(v){ var n=Number(v); return isFinite(n) ? n : null; }
@@ -855,12 +889,12 @@ document.addEventListener("DOMContentLoaded", async function(){
     if(st.metric==="usd"){
       big.style.color='#C2603E';
       big.innerHTML=pre("$")+fmtUSDbig(usd);
-      sub.innerHTML="等价价值 · 按 API 单价折合(非账单)";
+      sub.innerHTML="本机日志等价价值 · 按 API 单价折合，非真实账单";
     } else {
       big.style.color='#1E1C18';
       var s=fmtTok(tok), mm=s.match(/^([\d.,]+)(\D*)$/);
       big.innerHTML= mm && mm[2] ? mm[1]+suf(mm[2]) : s;
-      sub.innerHTML="已用 Token · 折合 <b style=\"color:#C2603E; font-weight:600\">$"+fmtUSDbig(usd)+"</b>";
+      sub.innerHTML="本机日志 Token（含 Cache Read） · 折合 <b style=\"color:#C2603E; font-weight:600\">$"+fmtUSDbig(usd)+"</b> · 非 Profile / 额度口径";
     }
     var tr=$("heroTrend");
     if(slice.length>1){ var avg=(st.metric==="usd"?usd:tok)/slice.length;
@@ -888,7 +922,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     var forecastBody = f.status==="unknown" ? "未知" : statusLabel(f.status);
     var forecastMeta = esc(forecastShortLine(f));
     var realBody = fmtUSD(rc.usdTotal);
-    var realMeta = '按 API 单价估算，非真实账单 · Fresh '+fmtTok(rc.freshTok)+' · Cache Read '+fmtShare(rc.cacheReadShare);
+    var realMeta = '本机日志 Token 含 Cache Read，非 Profile / 额度口径 · Fresh '+fmtTok(rc.freshTok)+' · Cache Read '+fmtShare(rc.cacheReadShare);
     var topBody = top ? esc(top.name) : "暂无项目";
     var topMeta = top ? ('今天最高用量 · '+fmtUSD(top.usd)+' · Fresh '+fmtTok(top.freshTok)+' <span style="display:inline-flex; gap:4px; margin-left:5px; vertical-align:1px;">'+projectToolsHtml(top.tools)+'</span>') : '今日 UTC+8 暂无项目用量';
     box.innerHTML =
@@ -920,7 +954,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     var statusLines=[];
     if(info.trend==="上升") statusLines.push("今天明显升温");
     if((today.cacheReadShare!=null && today.cacheReadShare>=0.5) || (info.seven.cacheReadShare!=null && info.seven.cacheReadShare>=0.5)) statusLines.push("缓存读取占比较高");
-    if(primary) statusLines.push("主要消耗来自 "+primary.id);
+    if(primary) statusLines.push("主要消耗来自 "+modelDisplayName(primary.id));
     if(info.trend==="数据不足") statusLines.push("近 7 天数据不足");
     if(!statusLines.length) statusLines.push("当前筛选下结构稳定");
     var todayVsAvg = info.histAvg && info.histAvg>0 ? fmtSignedPct(info.risePct) : "数据不足";
@@ -928,7 +962,7 @@ document.addEventListener("DOMContentLoaded", async function(){
       var v=st.metric==="usd" ? fmtUSD(row.usd) : fmtTok(row.tok);
       return '<div style="display:grid; grid-template-columns:22px minmax(0,1fr) auto; gap:8px; align-items:center; padding:8px 0; border-top:'+(i?'1px solid rgba(30,28,24,.06)':'0')+';">'
         +'<span style="width:11px; height:11px; border-radius:3px; background:'+row.color+'; display:inline-block;"></span>'
-        +'<span style="min-width:0; font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">'+esc(row.id)+'</span>'
+        +'<span title="'+esc(modelTitle(row.id))+'" style="min-width:0; font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">'+esc(modelDisplayName(row.id))+'</span>'
         +'<span style="font-family:'+MONO+'; font-size:12px; color:#847F76;">'+v+'</span>'
         +'<span></span><span style="grid-column:2/-1; font-family:'+MONO+'; font-size:10.5px; color:#ABA59C;">Fresh '+fmtTok(row.freshTok)+' · Cache Read '+fmtShare(row.cacheReadShare)+' · USD '+fmtUSD(row.usd)+'</span>'
         +'</div>';
@@ -943,8 +977,8 @@ document.addEventListener("DOMContentLoaded", async function(){
       +'</div>'
       +'<div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:8px;">'
       +focusStat("当前区间等价 USD", fmtUSD(range.usd), periodWord()+' · API 价折合')
-      +focusStat("Fresh Tokens", fmtTok(range.freshTok), "input + output + cache write")
-      +focusStat("Cache Read Share", fmtShare(range.cacheReadShare), "cache read / total token")
+      +focusStat("Fresh Tokens", fmtTok(range.freshTok), "本机日志 input + output + cache write")
+      +focusStat("Cache Read Share", fmtShare(range.cacheReadShare), "cache read / 本机日志总 token")
       +focusStat("今日 UTC+8", fmtUSD(today.usd), (todayDay ? todayDay.date : "无日期")+' · Fresh '+fmtTok(today.freshTok))
       +focusStat("今日 vs 7日均", todayVsAvg, info.histAvg&&info.histAvg>0 ? '7日均 '+metricLabel(info.histAvg) : '历史样本不足')
       +focusStat("近7天趋势", esc(info.trend), '最后活跃 '+esc(projectLastActiveDate(st.project)))
@@ -960,7 +994,7 @@ document.addEventListener("DOMContentLoaded", async function(){
       +'</div>'
       +'</div>'
       +'<div style="margin-top:12px; background:#FFFFFF; border:1px solid rgba(30,28,24,.08); border-radius:10px; padding:10px 12px;">'
-      +'<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:2px;"><span style="font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">Top Models</span><span style="font-family:'+MONO+'; font-size:10.5px; color:#ABA59C;">'+(st.metric==="usd"?"等价 USD":"Token")+'</span></div>'
+      +'<div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:2px;"><span style="font-size:10px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#ABA59C;">Top Models</span><span style="font-family:'+MONO+'; font-size:10.5px; color:#ABA59C;">'+(st.metric==="usd"?"等价 USD":"本机日志 Token")+'</span></div>'
       +modelHtml
       +'</div>'
       +'</div>';
@@ -1028,7 +1062,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     var rect=svg.getBoundingClientRect(), scale=rect.width/W, cx=rect.left+(PL+bw*i+bw/2)*scale;
     var rows='<div style="color:#FFFFFF; font-weight:600; margin-bottom:6px;">'+esc(d.label)+'</div>', tot=0;
     viz().forEach(function(m){ if(!st.on[m.id]) return; var v=val(d,m.id); tot+=v;
-      rows+='<div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; color:#B8B2A8;"><span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><i style="width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:7px; background:'+m.color+'"></i>'+esc(m.id)+'</span><span style="color:#F2EFEA; white-space:nowrap;">'+(st.metric==="usd"?fmtUSD(v):fmtTok(v))+'</span></div>'; });
+      rows+='<div style="display:grid; grid-template-columns:minmax(0,1fr) auto; gap:14px; color:#B8B2A8;"><span title="'+esc(modelTitle(m.id))+'" style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><i style="width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:7px; background:'+m.color+'"></i>'+esc(modelDisplayName(m.id))+'</span><span style="color:#F2EFEA; white-space:nowrap;">'+(st.metric==="usd"?fmtUSD(v):fmtTok(v))+'</span></div>'; });
     rows+='<div style="margin-top:6px; padding-top:6px; border-top:1px solid rgba(255,255,255,.14); color:#FFFFFF; display:flex; justify-content:space-between; gap:14px;"><span>合计</span><span>'+(st.metric==="usd"?fmtUSD(tot):fmtTok(tot))+'</span></div>';
     var barTop=rect.top+(PT+plotH-(dayTotal(d)/(svg._max||1))*plotH)*scale, pad=10;
     tip.innerHTML=rows;
@@ -1060,7 +1094,8 @@ document.addEventListener("DOMContentLoaded", async function(){
       var off=!st.on[m.id];
       var c=document.createElement("div");
       c.style.cssText="display:flex; align-items:center; gap:8px; font-family:"+MONO+"; font-size:12px; background:#FFFFFF; border:1px solid rgba(30,28,24,.1); border-radius:999px; padding:5px 13px 5px 11px; cursor:pointer; user-select:none; transition:opacity .13s, color .13s; color:"+(off?"#ABA59C":"#1E1C18")+"; opacity:"+(off?".65":"1")+";";
-      c.innerHTML='<span style="width:11px; height:11px; border-radius:3px; background:'+(off?"#D8D3CB":m.color)+';"></span>'+esc(m.id)+' <span style="color:'+(off?"#C3BDB4":"#847F76")+'; font-size:11px;">'+(st.metric==="usd"?fmtUSD(tot[m.id]):fmtTok(tot[m.id]))+'</span>';
+      c.title=modelTitle(m.id);
+      c.innerHTML='<span style="width:11px; height:11px; border-radius:3px; background:'+(off?"#D8D3CB":m.color)+';"></span>'+esc(modelDisplayName(m.id))+' <span style="color:'+(off?"#C3BDB4":"#847F76")+'; font-size:11px;">'+(st.metric==="usd"?fmtUSD(tot[m.id]):fmtTok(tot[m.id]))+'</span>';
       c.onclick=function(){ st.on[m.id]=!st.on[m.id]; renderAll(); };
       L.appendChild(c);
     });
@@ -1103,7 +1138,7 @@ document.addEventListener("DOMContentLoaded", async function(){
     VM.forEach(function(m){ var p=P[m.id]; if(!p) return;
       var write = (p.cacheWrite1h==null) ? "没读取到" : ("$"+p.cacheWrite1h+" / $"+p.cacheWrite5m);
       body+='<div style="'+grid+' padding:9px 13px; font-family:'+MONO+'; font-size:12px; color:#847F76; border-bottom:1px solid rgba(30,28,24,.04);">'
-        +'<span style="color:#1E1C18;"><i style="width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:7px;vertical-align:middle;background:'+m.color+';"></i>'+esc(m.id)+(p.estimated?' <span style="color:#C2603E; font-size:9.5px;">估</span>':'')+'</span>'
+        +'<span title="'+esc(modelTitle(m.id))+'" style="color:#1E1C18;"><i style="width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:7px;vertical-align:middle;background:'+m.color+';"></i>'+esc(modelDisplayName(m.id))+(p.estimated?' <span style="color:#C2603E; font-size:9.5px;">估</span>':'')+'</span>'
         +'<span style="text-align:right;">$'+p.input+'</span>'
         +'<span style="text-align:right;">$'+p.output+'</span>'
         +'<span style="text-align:right;">'+write+'</span>'
@@ -1602,9 +1637,12 @@ document.addEventListener("DOMContentLoaded", async function(){
   }
 
   function applyUpdatedAt(iso){
-    var d=new Date(iso); var hhmm = isNaN(d) ? "—" : (('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2));
-    $("updMain").textContent="更新于 "+hhmm+" · 每 60s";
-    $("updPop").textContent="更新 "+hhmm;
+    var d=new Date(iso);
+    var hhmm = isNaN(d) ? "—" : (('0'+d.getHours()).slice(-2)+':'+('0'+d.getMinutes()).slice(-2));
+    $("updMain").textContent="本机日志 · 更新 "+clockMDHM(iso)+" · 每 60s";
+    $("updPop").textContent="日志 "+hhmm;
+    var mb=$("mbSource");
+    if(mb) mb.textContent="本机日志 Token · 非 Profile / 额度口径 · 更新 "+hhmm;
   }
 
   // ---- 初始化 ----
@@ -1614,7 +1652,7 @@ document.addEventListener("DOMContentLoaded", async function(){
 
   renderPillPop();
   applyUpdatedAt(data.updatedAt);
-  $("notice").textContent = data.notice || "";
+  $("notice").textContent = tokenScopeText()+" · "+sourceScopeText()+((data.notice||"") ? " · "+data.notice : "");
 
   renderToolTabs();
   renderMini();
@@ -1630,7 +1668,7 @@ document.addEventListener("DOMContentLoaded", async function(){
       days = (nd.daily||[]).map(function(d){ return { label:d.date.slice(5).replace("-","/"), date:d.date, byModel:d.byModel||{}, byProject:d.byProject||{} }; });
       rebuildModels(); // 新模型 / tool 变化也跟上,保留显隐选择
       rebuildProjects();
-      renderPillPop(); applyUpdatedAt(nd.updatedAt); $("notice").textContent=nd.notice||"";
+      renderPillPop(); applyUpdatedAt(nd.updatedAt); $("notice").textContent=tokenScopeText()+" · "+sourceScopeText()+((nd.notice||"") ? " · "+nd.notice : "");
       renderToolTabs(); renderMini(); renderAll();
     }catch(e){
       console.warn("usage refresh failed", e);
