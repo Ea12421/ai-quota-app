@@ -16,6 +16,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
+import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { todayKeyUTC8, eachDay, round4 } from "./lib.mjs";
 import * as claude from "./sources/claude.mjs";
@@ -452,16 +453,56 @@ function serveStatic(req, res) {
   });
 }
 
-function runServe(port) {
-  let cache = compute();
-  const refresh = () => {
-    try {
-      cache = compute();
-    } catch (e) {
-      console.error("[refresh error]", e && e.stack ? e.stack : e);
-    }
+function emptyUsageCache() {
+  return {
+    updatedAt: new Date().toISOString(),
+    tools: [],
+    models: [],
+    projects: [],
+    daily: [],
+    limits: {},
+    totals: { tok: 0, usd: 0 },
+    _meta: { warmingUp: true, notice: NOTICE },
   };
-  setInterval(refresh, 60000);
+}
+
+function readUsageCache() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(OUT_FILE, "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function runServe(port) {
+  // 全量重算可能耗时数分钟。HTTP 先用上次快照就绪，
+  // 再由独立子进程重算，避免菜单栏 WebView 在启动期间白屏。
+  let cache = readUsageCache() || emptyUsageCache();
+  let refreshProcess = null;
+  let stopping = false;
+
+  const refresh = () => {
+    if (refreshProcess && refreshProcess.exitCode === null) return;
+
+    refreshProcess = spawn(process.execPath, [fileURLToPath(import.meta.url), "--refresh-cache"], {
+      cwd: PROJECT_ROOT,
+      stdio: "ignore",
+    });
+    refreshProcess.once("error", (error) => {
+      console.error("[refresh spawn error]", error && error.stack ? error.stack : error);
+      refreshProcess = null;
+    });
+    refreshProcess.once("exit", (code) => {
+      if (code === 0) {
+        cache = readUsageCache() || cache;
+      } else if (!stopping) {
+        console.error(`[refresh error] child exited with code ${code}`);
+      }
+      refreshProcess = null;
+    });
+  };
+  const refreshTimer = setInterval(refresh, 60000);
 
   const server = http.createServer((req, res) => {
     if (req.url.split("?")[0] === "/api/usage.json") {
@@ -480,7 +521,18 @@ function runServe(port) {
     console.log(`API:http://localhost:${port}/api/usage.json  ·  每 60s 自动重算`);
     const lim = Object.entries(cache.limits || {}).map(([t, v]) => t + ":" + (v ? "已接入" : "未接入")).join(" ");
     console.log(`数据:${cache.daily.length} 天 · 工具 [${cache.tools.join(", ")}] · 模型 ${cache.models.length} 个 · 限额 ${lim}`);
+    refresh();
   });
+
+  const stop = () => {
+    if (stopping) return;
+    stopping = true;
+    clearInterval(refreshTimer);
+    if (refreshProcess && refreshProcess.exitCode === null) refreshProcess.kill("SIGTERM");
+    server.close(() => process.exit(0));
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
 }
 
 // ---- 入口 ----
