@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { dayKeyUTC8, projectOf, round4 } from "../lib.mjs";
+import { dayKeySystem, projectOf, round4 } from "../lib.mjs";
 
 export const TOOL = "claude-code";
 
@@ -204,7 +204,7 @@ export function collect() {
       if (key !== "|" && seen.has(key)) continue;
       seen.add(key);
 
-      const day = dayKeyUTC8(o.timestamp);
+      const day = dayKeySystem(o.timestamp);
       if (!day) continue;
       const project = projectOf(o.cwd);
       projects[project.id] = project;

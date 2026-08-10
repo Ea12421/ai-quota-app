@@ -1,4 +1,4 @@
-// 共享小工具:UTC+8 切天、连续日期、取整。供编排器与各数据源复用。
+// 共享小工具:系统时区切天、连续日期、取整。供编排器与各数据源复用。
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -6,7 +6,28 @@ import path from "node:path";
 const MS_DAY = 86400000;
 const TZ_OFFSET_MS = 8 * 3600 * 1000; // UTC+8
 
-// UTC ISO8601 时间戳 → 显式 +8h 后取 UTC 年月日,保证全程 UTC+8,不依赖运行机时区
+function dateKeyFromParts(year, month, day) {
+  return String(year).padStart(4, "0") + "-" + String(month).padStart(2, "0") + "-" + String(day).padStart(2, "0");
+}
+
+// 跟随 Node 进程所在系统时区。macOS App 启动时会自然继承当前系统时区。
+export function dayKeySystem(iso) {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return null;
+  const d = new Date(t);
+  return dateKeyFromParts(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+export function todayKeySystem() {
+  return dayKeySystem(new Date().toISOString());
+}
+
+export function systemTimeZoneInfo() {
+  const id = Intl.DateTimeFormat().resolvedOptions().timeZone || "system";
+  return { mode: "system", id };
+}
+
+// 保留旧导出，避免外部脚本突然断裂；产品主链路从 v0.7 起改用 system 版本。
 export function dayKeyUTC8(iso) {
   const t = Date.parse(iso);
   if (Number.isNaN(t)) return null;

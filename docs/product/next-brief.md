@@ -36,7 +36,7 @@ v0.5 把 Burn-down Forecast 从窗口平均预测升级为更接近实时的额�
 - 不做自动任务分类。
 - 不做机器学习预测。
 - 不做人民币估算。
-- 不重写 engine 核心计费、去重、UTC+8、cache、`<synthetic>` 过滤口径。
+- 不重写 engine 核心计费、去重、cache、`<synthetic>` 过滤口径。按天统计时区已由后续 `v0.7` 决策改为当前 Mac 系统时区。
 
 ## 验收
 

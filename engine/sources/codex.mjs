@@ -15,7 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { dayKeyUTC8, projectOf, round4 } from "../lib.mjs";
+import { dayKeySystem, projectOf, round4 } from "../lib.mjs";
 
 export const TOOL = "codex";
 
@@ -39,7 +39,7 @@ function loadPrices() {
 }
 
 // Codex rate_limits → { fiveHour:{pct,resetAt}, sevenDay:{pct,resetAt} }
-// primary≈5h(window_minutes 300)、secondary≈7d(10080);resets_at 是 unix 秒
+// 优先按 window_minutes 判定窗口；只有旧日志完全缺少该字段时才回退 primary/secondary 位置。
 function mapRateLimits(rl) {
   if (!rl) return null;
   const toEntry = (w) => {
@@ -53,8 +53,8 @@ function mapRateLimits(rl) {
     if (w.window_minutes <= 600) five = toEntry(w);
     else seven = toEntry(w);
   }
-  if (!five && rl.primary) five = toEntry(rl.primary);
-  if (!seven && rl.secondary) seven = toEntry(rl.secondary);
+  if (!five && rl.primary && rl.primary.window_minutes == null) five = toEntry(rl.primary);
+  if (!seven && rl.secondary && rl.secondary.window_minutes == null) seven = toEntry(rl.secondary);
   if (!five && !seven) return null;
   return { fiveHour: five, sevenDay: seven };
 }
@@ -229,7 +229,7 @@ export function collect() {
           curProject = projectOf(o.payload.cwd);
           projects[curProject.id] = curProject;
         }
-        const turnDay = dayKeyUTC8(o.timestamp);
+        const turnDay = dayKeySystem(o.timestamp);
         noteAgentDay(agentDaily, turnDay, 0, 1);
         session.userTurnCount += 1;
         session.project = session.project.id === "unknown" && curProject.id !== "unknown" ? curProject : session.project;
@@ -284,7 +284,7 @@ export function collect() {
         if (input === 0 && output === 0) continue;
 
         const model = curModel || "codex-unknown";
-        const day = dayKeyUTC8(o.timestamp);
+        const day = dayKeySystem(o.timestamp);
         if (!day) continue;
 
         models.add(model);

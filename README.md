@@ -110,14 +110,14 @@ app/build/用量看板.app
 能力：
 
 - 工具切换：全部 / Claude Code / Codex。
-- 时间切换：当天 / 近 7 天 / 近 30 天 / 全部。
+- 时间切换：当天、近 2～7 天、近 14 / 30 / 90 天、上一整周、全部和自定义日期。
 - 指标切换：Token / 美元。
 - Burn-down Forecast：基于 5h / 7d 限额百分比、reset 时间、15m / 60m 短窗口速度和窗口平均速度做燃尽判断。
 - Real Cost View：突出等价 USD、Fresh Tokens、Cache Read Share。
 - Today's Top Project：显示今日最高消耗项目。
 - Project Monitor：按项目聚合当前区间用量、成本、Fresh Tokens、Cache Read Share。
 - Project Focus：选择项目后展示项目专属用量、Top Models、今日用量和区间表现。
-- 今日 Top 项目：按 UTC+8 今日统计项目排行。
+- 今日 Top 项目：按当前 Mac 系统时区的自然日统计项目排行。
 - 当前区间项目分布：展示所选时间段内项目分布。
 - 任务标签 / 手动归因：用户可以手动创建任务标签，用本地筛选范围做粗略成本归因。
 - Agent 使用趋势：在有可靠数据时展示 Agent 相关趋势；数据不足时明确显示不足，不造假。
@@ -132,7 +132,7 @@ UI 数据来源只来自本地 `/api/usage.json`，不直接读取 Claude / Code
 位置：
 
 - `engine/usage-data.mjs`: 主入口，聚合数据、生成 `usage.json`、提供本地 HTTP 服务。
-- `engine/lib.mjs`: 通用工具，包括 UTC+8 切天、日期补齐、项目名脱敏等。
+- `engine/lib.mjs`: 通用工具，包括系统时区切天、日期补齐、项目名脱敏等。
 - `engine/sources/claude.mjs`: Claude Code 数据源适配器。
 - `engine/sources/codex.mjs`: Codex 数据源适配器。
 - `engine/prices.codex.json`: Codex / OpenAI 本地价格表。
@@ -286,6 +286,9 @@ engine/usage-data.mjs  聚合、脱敏、生成统一 usage.json
 ```json
 {
   "updatedAt": "ISO time",
+  "_meta": {
+    "timeZone": { "mode": "system", "id": "America/Los_Angeles" }
+  },
   "tools": ["claude-code", "codex"],
   "models": [],
   "pricing": {},
@@ -317,6 +320,7 @@ engine/usage-data.mjs  聚合、脱敏、生成统一 usage.json
 
 - `daily[].byModel`: 每天按模型聚合。
 - `daily[].byProject`: 每天按项目聚合。
+- `daily[]` 的自然日边界跟随运行 App 的 Mac 系统时区；当前时区写在 `_meta.timeZone`。
 - `projects[]`: 当前可选项目列表，项目路径默认脱敏。
 - `tokBreakdown`: input / output / cache write / cache read。
 - `usdBreakdown`: input / output / cache write / cache read 的等价 USD。

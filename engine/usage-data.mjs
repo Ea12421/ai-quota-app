@@ -18,7 +18,7 @@ import path from "node:path";
 import http from "node:http";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { todayKeyUTC8, eachDay, round4 } from "./lib.mjs";
+import { todayKeySystem, systemTimeZoneInfo, eachDay, round4 } from "./lib.mjs";
 import * as claude from "./sources/claude.mjs";
 import * as codex from "./sources/codex.mjs";
 
@@ -187,7 +187,8 @@ function compute() {
   const limitSnapshots = [];
   let minDay = null;
   let maxDay = null;
-  const today = todayKeyUTC8(); // 未来日期/时钟偏移的记录夹到今天:避免生成几百万空天(OOM)且区间锚定错乱
+  const timeZone = systemTimeZoneInfo();
+  const today = todayKeySystem(); // 未来日期/时钟偏移的记录夹到系统今日，避免生成几百万空天(OOM)且区间锚定错乱
   const floor = new Date(Date.parse(today + "T00:00:00Z") - 1100 * 86400000).toISOString().slice(0, 10); // 远古坏时间戳夹到 ~3 年前,同样防 OOM
 
   const zeroBreak = () => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0 });
@@ -300,7 +301,7 @@ function compute() {
       lastActiveDate: projectLastActive[id] || null,
     }));
 
-  // 连续补齐:最早有用量的天 → 今天(UTC+8),每天补齐所有模型键(零填),带 tool 标签
+  // 连续补齐:最早有用量的天 → 系统今日，每天补齐所有模型键(零填),带 tool 标签
   const daily = [];
   if (minDay) {
     // 数据日期已夹到今天,连续补齐到今天即可(maxDay ≤ today)
@@ -354,6 +355,7 @@ function compute() {
     notice: NOTICE,
     _meta: {
       generatedBy: "engine/usage-data.mjs",
+      timeZone,
       sources: results.map((r) => ({
         tool: r.tool,
         // 把家目录绝对路径替成 ~,别在公开响应里泄露用户名/本机路径

@@ -34,7 +34,7 @@ AI 用量看板是一个本机运行的个人 AI usage decision dashboard。它�
 
 - 本地优先: 数据只在本机读取、聚合和展示。
 - 隐私优先: 不读取、不展示 `message.content` 或对话正文。
-- 数据口径稳定: 继续尊重 UTC+8 按天、cache write 5m/1h、cache read、去重、`<synthetic>` 过滤、防路径泄露等已 vet 口径。
+- 数据口径稳定: 按天统计跟随当前 Mac 系统时区；继续尊重 cache write 5m/1h、cache read、去重、`<synthetic>` 过滤、防路径泄露等已 vet 口径。
 - 决策优先: 优先回答能影响当下行为的问题，而不是堆更多图表。
 - 增量实现: 优先复用现有 `usage.json` 和 `web/index.html` 结构，不为一个展示需求重写 engine。
 - 低维护成本: 不引入重依赖，不默认联网，不做难以长期维护的复杂 BI。
@@ -76,7 +76,7 @@ AI 用量看板是一个本机运行的个人 AI usage decision dashboard。它�
 
 - Burn-down Forecast: 基于 5h / 7d 限额百分比和 reset 时间给出 ETA / reset-first 结论。
 - Real Cost View: 首屏突出 equivalent USD、fresh tokens、cache read share。
-- Today's Top Projects: 展示今日 UTC+8 Top 项目，并可点击进入项目筛选。
+- Today's Top Projects: 展示系统时区今日 Top 项目，并可点击进入项目筛选。
 
 验收: 首屏能在 10 秒内回答剩余额度风险、真实成本结构、今日主要消耗项目。
 
