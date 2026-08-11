@@ -119,11 +119,10 @@ app/build/用量看板.app
 - Project Focus：选择项目后展示项目专属用量、Top Models、今日用量和区间表现。
 - 今日 Top 项目：按当前 Mac 系统时区的自然日统计项目排行。
 - 当前区间项目分布：展示所选时间段内项目分布。
-- 任务标签 / 手动归因：用户可以手动创建任务标签，用本地筛选范围做粗略成本归因。
-- Agent 使用趋势：在有可靠数据时展示 Agent 相关趋势；数据不足时明确显示不足，不造假。
 - 每日用量图：柱状 / 折线切换，tooltip 已做边缘避让。
-- 区块折叠：低频区块可展开/收起，状态保存在浏览器 `localStorage`。
-- 单价表：展示各模型 USD / 百万 token 估算价。
+- 模型明细：只展示当前区间真正产生用量且能可靠识别的模型；无法确认名称的日志仍计入总 Token，不猜模型名。
+- 区块折叠：所有区块使用一致的展开/收起标题，状态保存在浏览器 `localStorage`。
+- 单价表：展示各模型 USD / 百万 token 估算价；GPT-5.6 Sol / Terra / Luna 使用 OpenAI 官方模型页价格。
 
 UI 数据来源只来自本地 `/api/usage.json`，不直接读取 Claude / Codex 原始日志。
 
@@ -141,6 +140,7 @@ UI 数据来源只来自本地 `/api/usage.json`，不直接读取 Claude / Code
 
 - 只读本机 Claude Code 与 Codex 使用记录。
 - 按天、模型、工具、项目聚合 token 与等价 USD。
+- 当一个 Codex 日志文件只有一个明确模型时，可把模型上下文出现前的用量可靠回填给该模型；多模型或没有模型证据时保持未知。
 - 支持 input / output / cache write / cache read 四类拆分。
 - 支持项目归因，默认展示脱敏项目名，不暴露完整本机路径。
 - 支持 5h / 7d 限额快照。
@@ -327,7 +327,7 @@ engine/usage-data.mjs  聚合、脱敏、生成统一 usage.json
 - Codex / OpenAI 本地日志当前未提供 cache write 单独字段；界面显示为“没读取到”，JSON 中保留 `cacheWrite: 0` 只是兼容旧四分类结构。
 - `usageVelocity`: 15m / 60m token/hour 聚合，只输出派生统计。
 - `limitSnapshots`: 最近限额百分比快照，用于 quota API 和 Burn-down 的短窗口预测。
-- 价格是按本地价格表折算的等价值，不等于真实账单。
+- 价格是按本地价格表折算的等价值，不等于真实账单；GPT-5.6 价格于 2026-08-10 按 OpenAI 官方模型文档校准，单次输入超过 272K token 时按官方长上下文倍率折算。
 
 ## 隐私与安全边界
 
@@ -431,14 +431,12 @@ git ls-files .agent-team usage.json app/build
 
 - v0.2: Burn-down Forecast、Real Cost View、今日 Top 项目。
 - v0.3: Project Focus Drill-down、项目筛选联动、tooltip 边缘避让。
-- v0.4: Project Monitor、项目视图增强、任务标签 / 手动归因、Agent 使用趋势、quota API 常驻。
+- v0.4: Project Monitor、项目视图增强、quota API 常驻；当时加入的手动任务归因和 Agent 调用倍数模块已在后续界面精简中移除。
 - v0.5: Quota Velocity Forecast，基于 15m / 60m / window average 的最保守额度速度预测。
-- 最新 UI 增强: 完整窗口多个区块可折叠，状态本地持久化。
+- v0.7: 系统时区自然日、灵活日期范围、可靠模型名回填、GPT-5.6 计价校准和管理区精简。
 
 后续可继续做：
 
 - 更完整的 session/window 下钻。
-- 更可靠的 Agent 趋势数据源。
-- 任务标签批量管理和导出。
 - quota API 与外部 Coordinator 工具的更深接入。
 - 错误 / retry / overloaded 浪费统计。

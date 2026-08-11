@@ -150,7 +150,7 @@ function materializeSession(s) {
 
 export function collect() {
   const prices = loadPrices();
-  const agg = {}; // day -> project -> model -> {input, cached, output}
+  const agg = {}; // day -> project -> model -> token 与逐次计价后的 USD 汇总
   const models = new Set();
   const unpriced = new Set();
   const projects = {};
@@ -160,6 +160,7 @@ export function collect() {
   const limitSnapshots = [];
   let filesWithTok = 0;
   let filesSkipped = 0;
+  let filesUsingUniqueModelFallback = 0;
   const latestRLByPool = new Map(); // limit_id/limit_name -> 最新 rate_limits。避免模型专属 0% 覆盖主 Codex 限额。
   const roots = [];
 
@@ -194,6 +195,23 @@ export function collect() {
     } catch {
       return;
     }
+    // 部分日志会先写 token_count，稍后才在 turn_context 写模型名。
+    // 只有整份日志恰好存在一个明确模型时，才允许把前置用量回填给它；多模型时保持 unknown，避免猜错。
+    const fileModels = new Set();
+    for (const line of lines) {
+      if (!line || (!line.includes("turn_context") && !line.includes("session_meta"))) continue;
+      let meta;
+      try {
+        meta = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if ((meta.type === "turn_context" || meta.type === "session_meta") && meta.payload && meta.payload.model) {
+        fileModels.add(meta.payload.model);
+      }
+    }
+    const uniqueFileModel = fileModels.size === 1 ? fileModels.values().next().value : null;
+    let usedUniqueModelFallback = false;
     let curModel = null;
     let curProject = projectOf(null);
     let prevTotal = null;
@@ -218,9 +236,12 @@ export function collect() {
       } catch {
         continue;
       }
-      if (o.type === "session_meta" && o.payload && o.payload.cwd) {
-        curProject = projectOf(o.payload.cwd);
-        projects[curProject.id] = curProject;
+      if (o.type === "session_meta" && o.payload) {
+        if (o.payload.model) curModel = o.payload.model;
+        if (o.payload.cwd) {
+          curProject = projectOf(o.payload.cwd);
+          projects[curProject.id] = curProject;
+        }
         continue;
       }
       if (o.type === "turn_context" && o.payload) {
@@ -283,7 +304,8 @@ export function collect() {
         const output = lu.output_tokens || 0;
         if (input === 0 && output === 0) continue;
 
-        const model = curModel || "codex-unknown";
+        const model = curModel || uniqueFileModel || "codex-unknown";
+        if (!curModel && uniqueFileModel) usedUniqueModelFallback = true;
         const day = dayKeySystem(o.timestamp);
         if (!day) continue;
 
@@ -317,14 +339,25 @@ export function collect() {
 
         (agg[day] || (agg[day] = {}));
         (agg[day][curProject.id] || (agg[day][curProject.id] = {}));
-        const slot = agg[day][curProject.id][model] || (agg[day][curProject.id][model] = { input: 0, cached: 0, output: 0 });
+        const slot = agg[day][curProject.id][model] || (agg[day][curProject.id][model] = {
+          input: 0,
+          cached: 0,
+          output: 0,
+          usdInput: 0,
+          usdOutput: 0,
+          usdCacheRead: 0,
+        });
         slot.input += input;
         slot.cached += cached;
         slot.output += output;
+        slot.usdInput += callUsd.input;
+        slot.usdOutput += callUsd.output;
+        slot.usdCacheRead += callUsd.cacheRead;
       }
     }
     if (hadTok) filesWithTok += 1;
     else filesSkipped += 1;
+    if (usedUniqueModelFallback) filesUsingUniqueModelFallback += 1;
     if (session.modelCallCount > 0) sessions.push(materializeSession(session));
   }
 
@@ -342,11 +375,14 @@ export function collect() {
     const r = priceForModel(model);
     const p = r ? r.p : { input: 0, output: 0, cachedInput: 0 };
     const billedInput = Math.max(0, s.input - s.cached);
+    const isLongContext = Number.isFinite(p.longContextThreshold) && s.input > p.longContextThreshold;
+    const inputMultiplier = isLongContext ? (p.longContextInputMultiplier || 1) : 1;
+    const outputMultiplier = isLongContext ? (p.longContextOutputMultiplier || 1) : 1;
     return {
-      input: (billedInput * p.input) / 1e6,
-      output: (s.output * p.output) / 1e6,
+      input: (billedInput * p.input * inputMultiplier) / 1e6,
+      output: (s.output * p.output * outputMultiplier) / 1e6,
       cacheWrite: 0,
-      cacheRead: (s.cached * p.cachedInput) / 1e6,
+      cacheRead: (s.cached * p.cachedInput * inputMultiplier) / 1e6,
     };
   }
 
@@ -355,7 +391,12 @@ export function collect() {
     for (const [projectId, byModel] of Object.entries(agg[date])) {
       for (const [model, s] of Object.entries(byModel)) {
         const fresh = Math.max(0, s.input - s.cached);
-        const ub = usdBreakdownOf(model, s);
+        const ub = {
+          input: s.usdInput || 0,
+          output: s.usdOutput || 0,
+          cacheWrite: 0,
+          cacheRead: s.usdCacheRead || 0,
+        };
         entries.push({
           date,
           project: projects[projectId] || projectOf(null),
@@ -378,7 +419,18 @@ export function collect() {
   for (const m of models) {
     const r = priceForModel(m);
     pricing[m] = r
-      ? { tool: TOOL, input: r.p.input, output: r.p.output, cacheWrite1h: null, cacheWrite5m: null, cacheRead: r.p.cachedInput, estimated: r.estimated }
+      ? {
+          tool: TOOL,
+          input: r.p.input,
+          output: r.p.output,
+          cacheWrite1h: null,
+          cacheWrite5m: null,
+          cacheRead: r.p.cachedInput,
+          estimated: r.estimated,
+          longContextThreshold: r.p.longContextThreshold || null,
+          longContextInputMultiplier: r.p.longContextInputMultiplier || null,
+          longContextOutputMultiplier: r.p.longContextOutputMultiplier || null,
+        }
       : { tool: TOOL, input: 0, output: 0, cacheWrite1h: null, cacheWrite5m: null, cacheRead: 0, estimated: false };
   }
 
@@ -393,7 +445,7 @@ export function collect() {
     pricing,
     limits,
     source: roots.join(", ") || codexHomes().join(", ") + " (无 sessions 目录)",
-    stats: { filesWithTok, filesSkipped },
+    stats: { filesWithTok, filesSkipped, filesUsingUniqueModelFallback },
     sessions,
     agentDaily,
     usageEvents,

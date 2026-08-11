@@ -1,12 +1,41 @@
 {
   "_meta": {
-    "note": "Codex/OpenAI 每百万 token 单价(美元)。自解析方案 B 的本地缓存价格表,可手动更新。",
-    "source": "LiteLLM model_prices_and_context_window.json (litellm_provider=openai, gpt-5*)",
-    "sourceUrl": "https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json",
-    "fetchedAt": "2026-06-25",
+    "note": "Codex/OpenAI 每百万 token 单价(美元)。GPT-5.6 使用 OpenAI 官方模型页，其余保留本地缓存价格表。",
+    "source": "OpenAI 官方模型文档(GPT-5.6); LiteLLM model_prices_and_context_window.json(其余历史条目)",
+    "sourceUrl": "https://developers.openai.com/api/docs/models/compare",
+    "sourceUrls": {
+      "gpt-5.6-sol": "https://developers.openai.com/api/docs/models/gpt-5.6-sol",
+      "gpt-5.6-terra": "https://developers.openai.com/api/docs/models/gpt-5.6-terra",
+      "gpt-5.6-luna": "https://developers.openai.com/api/docs/models/gpt-5.6-luna"
+    },
+    "fetchedAt": "2026-08-10",
     "fields": "input=未命中缓存的输入价, cachedInput=命中缓存的输入价, output=输出价(含 reasoning)"
   },
   "prices": {
+    "gpt-5.6-sol": {
+      "input": 5,
+      "cachedInput": 0.5,
+      "output": 30,
+      "longContextThreshold": 272000,
+      "longContextInputMultiplier": 2,
+      "longContextOutputMultiplier": 1.5
+    },
+    "gpt-5.6-terra": {
+      "input": 2,
+      "cachedInput": 0.2,
+      "output": 12,
+      "longContextThreshold": 272000,
+      "longContextInputMultiplier": 2,
+      "longContextOutputMultiplier": 1.5
+    },
+    "gpt-5.6-luna": {
+      "input": 0.2,
+      "cachedInput": 0.02,
+      "output": 1.2,
+      "longContextThreshold": 272000,
+      "longContextInputMultiplier": 2,
+      "longContextOutputMultiplier": 1.5
+    },
     "gpt-5": {
       "input": 1.25,
       "cachedInput": 0.125,
